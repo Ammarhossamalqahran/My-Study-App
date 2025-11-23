@@ -9,9 +9,82 @@ from gtts import gTTS
 import io
 import graphviz
 from youtube_transcript_api import YouTubeTranscriptApi
+from streamlit_option_menu import option_menu
+import os
+import datetime
 
-# --- 1. إعداد الصفحة ---
-st.set_page_config(page_title="المدرس الشامل (Unlimited)", page_icon="🛡️", layout="wide")
+# --- 1. إعداد الصفحة وتصميم Canva ---
+st.set_page_config(page_title="EduMinds - منصتي التعليمية", page_icon="🎓", layout="wide")
+
+# Custom CSS for Canva-like Look
+st.markdown("""
+<style>
+    /* تغيير الفونت */
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
+    html, body, [class*="css"] {
+        font-family: 'Cairo', sans-serif;
+    }
+    
+    /* تصميم الكروت (Cards) */
+    .card {
+        background-color: #1E1E1E;
+        border-radius: 15px;
+        padding: 20px;
+        margin: 10px 0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        border: 1px solid #333;
+        transition: transform 0.3s;
+    }
+    .card:hover {
+        transform: translateY(-5px);
+        border-color: #764abc;
+    }
+    
+    /* تصميم الزراير */
+    .stButton>button {
+        background: linear-gradient(90deg, #764abc 0%, #64379f 100%);
+        color: white;
+        border-radius: 10px;
+        border: none;
+        padding: 10px 20px;
+        font-weight: bold;
+    }
+    .stButton>button:hover {
+        background: linear-gradient(90deg, #8a5cd1 0%, #764abc 100%);
+        color: white;
+    }
+
+    /* الفوتر الجديد (حقوق عمار ومريم) */
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #0E1117;
+        color: #ffffff;
+        text-align: center;
+        padding: 15px;
+        border-top: 2px solid #764abc;
+        font-size: 15px;
+        z-index: 999;
+        box-shadow: 0 -5px 10px rgba(0,0,0,0.5);
+    }
+    .footer b {
+        color: #764abc;
+    }
+    .footer .sub-name {
+        font-size: 13px;
+        color: #bbb;
+        margin-top: -10px;
+        display: block;
+    }
+    
+    /* إخفاء القوائم الافتراضية */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    
+</style>
+""", unsafe_allow_html=True)
 
 # --- 2. إعداد المفتاح ---
 if "GOOGLE_API_KEY" in st.secrets:
@@ -22,193 +95,135 @@ else:
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel('gemini-2.0-flash')
 
-# --- 3. دوال القراءة الذكية (Smart Readers) ---
+# --- 3. دوال وإعدادات النظام ---
+DB_FILE = "users_db.json"
 
-def get_pdf_text(uploaded_file):
-    try:
-        pdf_reader = PyPDF2.PdfReader(uploaded_file)
-        text = ""
-        for page in pdf_reader.pages:
-            text += page.extract_text() or ""
-        return text
-    except: return "[حدث خطأ أثناء قراءة ملف PDF]"
+def load_db():
+    if not os.path.exists(DB_FILE): return {}
+    with open(DB_FILE, 'r') as f: return json.load(f)
 
-def get_docx_text(uploaded_file):
-    try:
-        doc = docx.Document(uploaded_file)
-        full_text = []
-        for para in doc.paragraphs:
-            full_text.append(para.text)
-        return '\n'.join(full_text)
-    except: return "[حدث خطأ أثناء قراءة ملف Word]"
+def save_db(db):
+    with open(DB_FILE, 'w') as f: json.dump(db, f)
 
-def get_excel_csv_text(uploaded_file):
-    try:
-        # لو اكسيل أو CSV بنحوله لنص
-        if uploaded_file.name.endswith('.csv'):
-            df = pd.read_csv(uploaded_file)
-        else:
-            df = pd.read_excel(uploaded_file)
-        return df.to_string() # تحويل الجدول لنص عشان الموديل يفهمه
-    except: return "[حدث خطأ أثناء قراءة ملف البيانات]"
+def get_user_data(email):
+    db = load_db()
+    if email not in db:
+        db[email] = {"name": email.split('@')[0], "joined": str(datetime.date.today()), "exam_history": []}
+        save_db(db)
+    return db[email]
 
-def read_any_text_file(uploaded_file):
-    # دي الدالة السحرية لأي ملف نصي (كود، txt، json، srt...)
-    try:
-        # بنحاول نفك تشفير الملف حتى لو فيه رموز غريبة (errors='ignore')
-        return uploaded_file.getvalue().decode("utf-8", errors='ignore')
-    except: return "[ملف غير قابل للقراءة النصية]"
+def update_user_progress(email, score):
+    db = load_db()
+    if email in db:
+        db[email]["exam_history"].append({"date": str(datetime.date.today()), "score": score})
+        save_db(db)
 
-def clean_text(text):
-    return text.replace("```json", "").replace("```graphviz", "").replace("```", "").strip()
+# دوال القراءة
+def get_pdf_text(file):
+    try: return "".join([p.extract_text() for p in PyPDF2.PdfReader(file).pages])
+    except: return ""
 
-def text_to_speech_html(text, lang='ar'):
-    try:
-        tts = gTTS(text=text, lang=lang)
-        fp = io.BytesIO()
-        tts.write_to_fp(fp)
-        return fp
-    except: return None
+def get_docx_text(file):
+    try: return "\n".join([p.text for p in docx.Document(file).paragraphs])
+    except: return ""
 
-def get_youtube_text(video_url):
-    try:
-        video_id = video_url.split("v=")[1].split("&")[0]
-        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['ar', 'en'])
-        full_text = " ".join([entry['text'] for entry in transcript])
-        return full_text
-    except: return None
+def read_files(files):
+    text = ""
+    for f in files:
+        text += f"\n--- {f.name} ---\n"
+        if f.name.endswith('.pdf'): text += get_pdf_text(f)
+        elif f.name.endswith('.docx'): text += get_docx_text(f)
+        else: text += "[ملف غير مدعوم]"
+    return text
 
-# --- 4. Session State ---
-if "messages" not in st.session_state: st.session_state.messages = []
-if "file_content" not in st.session_state: st.session_state.file_content = ""
-if "exam_history" not in st.session_state: st.session_state.exam_history = []
-if "current_quiz" not in st.session_state: st.session_state.current_quiz = None
-if "flashcards" not in st.session_state: st.session_state.flashcards = []
+# --- 4. تسجيل الدخول ---
+if "user_email" not in st.session_state: st.session_state.user_email = None
 
-# --- 5. القائمة الجانبية (تم إلغاء القيود على نوع الملفات) ---
-with st.sidebar:
-    st.header("🛡️ لوحة التحكم")
-    mode = st.radio("الوضع:", 
-                    ["💬 المذاكرة والشات", "📺 يوتيوب", "🧠 خرائط", "🃏 بطاقات", "📝 اختبار", "📊 تقييم"])
+def login_page():
+    st.markdown("<h1 style='text-align: center; color: #764abc;'>EduMinds Login 🔐</h1>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login"):
+            email = st.text_input("📧 البريد الإلكتروني:")
+            if st.form_submit_button("دخول") and "@" in email:
+                st.session_state.user_email = email
+                st.rerun()
+
+# --- 5. التطبيق الرئيسي ---
+def main_app():
+    user = get_user_data(st.session_state.user_email)
     
-    st.divider()
-    
-    if mode != "📺 يوتيوب":
-        st.subheader("📂 ارفع أي ملف في الدنيا")
-        # التعديل السحري: شلنا type=... عشان يقبل كله
-        uploaded_files = st.file_uploader("Drop any file here", accept_multiple_files=True)
-        
-        if uploaded_files and st.button("تحليل الملفات 🚀"):
-            with st.spinner("جاري فك شفرة الملفات..."):
-                combined_text = ""
-                file_count = 0
-                
-                # حلقة تكرارية ذكية بتشوف نوع الملف وتختار الأداة المناسبة
-                for file in uploaded_files:
-                    try:
-                        file_text = ""
-                        fname = file.name.lower()
-                        combined_text += f"\n\n--- ملف: {file.name} ---\n"
-                        
-                        # توجيه الملفات للأدوات المناسبة
-                        if fname.endswith('.pdf'):
-                            file_text = get_pdf_text(file)
-                        elif fname.endswith('.docx'):
-                            file_text = get_docx_text(file)
-                        elif fname.endswith(('.xlsx', '.xls', '.csv')):
-                            file_text = get_excel_csv_text(file)
-                        elif fname.endswith(('.png', '.jpg', '.jpeg', '.webp')):
-                            try:
-                                image = Image.open(file)
-                                res = model.generate_content(["استخرج كل النصوص المكتوبة في الصورة", image])
-                                file_text = res.text
-                            except: file_text = "[صورة غير صالحة]"
-                        else:
-                            # لأي ملف تاني (txt, py, java, html, json...)
-                            file_text = read_any_text_file(file)
-                        
-                        combined_text += file_text
-                        file_count += 1
-                        
-                    except Exception as e:
-                        # لو ملف ضرب، نكتب اسمه ونكمل عادي من غير ما البرنامج يقع
-                        combined_text += f"\n[فشل قراءة هذا الملف: {str(e)}]\n"
-                
-                st.session_state.file_content = combined_text
-                if file_count > 0:
-                    st.success(f"تمت قراءة {file_count} ملفات بنجاح! مهما كان نوعهم.")
-                else:
-                    st.warning("لم يتم استخراج نصوص مفيدة.")
-
-# --- 6. باقي الأوضاع (زي ما هي) ---
-
-if mode == "💬 المذاكرة والشات":
-    st.title("💬 الشات المدرع")
-    if not st.session_state.file_content: st.info("ارفع أي ملف (Excel, Word, Code...) 👈")
-    else:
-        for msg in st.session_state.messages:
-            with st.chat_message(msg["role"]): st.markdown(msg["content"])
-        if prompt := st.chat_input("اكتب سؤالك..."):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            with st.chat_message("user"): st.markdown(prompt)
-            with st.chat_message("assistant"):
-                with st.spinner("بيحلل..."):
-                    # نظام أمان عشان لو النص كبير جداً
-                    content_snippet = st.session_state.file_content[:30000] 
-                    full_prompt = f"المحتوى:\n{content_snippet}\n\nسؤال: {prompt}\nجاوب باحترافية."
-                    try:
-                        response = model.generate_content(full_prompt)
-                        st.markdown(response.text)
-                        st.session_state.messages.append({"role": "assistant", "content": response.text})
-                    except Exception as e:
-                        st.error("الذكاء الاصطناعي واجه مشكلة بسيطة، حاول تسأل بصيغة تانية.")
-
-elif mode == "📺 يوتيوب":
-    st.title("📺 يوتيوب")
-    url = st.text_input("الرابط:")
-    if st.button("لخص") and url:
-        yt_text = get_youtube_text(url)
-        if yt_text:
-            res = model.generate_content(f"لخص: {yt_text}")
-            st.write(res.text)
-            st.session_state.file_content = yt_text
-        else: st.error("فيديو بدون ترجمة أو رابط خطأ")
-
-elif mode == "🧠 خرائط":
-    st.title("🧠 خرائط")
-    if st.button("رسم") and st.session_state.file_content:
-        res = model.generate_content(f"Create Graphviz DOT code for: {st.session_state.file_content[:5000]} inside graphviz block")
-        try: st.graphviz_chart(clean_text(res.text))
-        except: st.error("تعذر الرسم")
-
-elif mode == "🃏 بطاقات":
-    st.title("🃏 بطاقات")
-    if st.button("إنشاء") and st.session_state.file_content:
-        try:
-            res = model.generate_content(f"Extract 5 terms JSON from: {st.session_state.file_content[:4000]} as [{{'term':'','definition':''}}]")
-            st.session_state.flashcards = json.loads(clean_text(res.text))
-        except: pass
-    for c in st.session_state.flashcards: st.info(f"{c['term']}: {c['definition']}")
-
-elif mode == "📝 اختبار":
-    st.title("📝 اختبار")
-    if st.button("جديد") and st.session_state.file_content:
-        try:
-            res = model.generate_content(f"Create 5 MCQ JSON from: {st.session_state.file_content[:5000]} as [{{'question':'','options':[],'answer':''}}]")
-            st.session_state.current_quiz = json.loads(clean_text(res.text))
+    with st.sidebar:
+        st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
+        st.write(f"أهلاً، **{user['name']}** 👋")
+        selected = option_menu("القائمة", ["الرئيسية", "ملفاتي", "شات AI", "امتحانات"], 
+                             icons=['house', 'folder', 'chat-dots', 'card-checklist'],
+                             styles={"nav-link-selected": {"background-color": "#764abc"}})
+        if st.button("خروج"): 
+            st.session_state.user_email = None
             st.rerun()
-        except: pass
-    if st.session_state.current_quiz:
-        with st.form("q"):
-            ans = {}
-            for i,q in enumerate(st.session_state.current_quiz):
-                st.write(q['question'])
-                ans[i] = st.radio("", q['options'], key=i)
-            if st.form_submit_button("تصحيح"):
-                sc = sum([1 for i,q in enumerate(st.session_state.current_quiz) if ans[i]==q['answer']])
-                st.write(f"{sc}/5")
-                st.session_state.exam_history.append({"Score": sc*20})
 
-elif mode == "📊 تقييم":
-    st.title("📊 تقييم")
-    if st.session_state.exam_history: st.line_chart(pd.DataFrame(st.session_state.exam_history)['Score'])
+    # الصفحات
+    if selected == "الرئيسية":
+        st.title(f"📊 لوحة تحكم {user['name']}")
+        col1, col2, col3 = st.columns(3)
+        col1.markdown(f"<div class='card'><h3>📅 انضممت</h3><p>{user['joined']}</p></div>", unsafe_allow_html=True)
+        col2.markdown(f"<div class='card'><h3>📝 امتحانات</h3><p>{len(user['exam_history'])}</p></div>", unsafe_allow_html=True)
+        avg = 0
+        if user['exam_history']: avg = sum([x['score'] for x in user['exam_history']])/len(user['exam_history'])
+        col3.markdown(f"<div class='card'><h3>⭐ المستوى</h3><p>{avg:.1f}%</p></div>", unsafe_allow_html=True)
+
+    elif selected == "ملفاتي":
+        st.title("📂 مكتبة الملفات")
+        files = st.file_uploader("ارفع الملفات", accept_multiple_files=True)
+        if files and st.button("حفظ"):
+            st.session_state.file_content = read_files(files)
+            st.success("تم الحفظ!")
+
+    elif selected == "شات AI":
+        st.title("💬 المساعد الذكي")
+        if "file_content" not in st.session_state: st.warning("ارفع ملفات الأول")
+        else:
+            if "messages" not in st.session_state: st.session_state.messages = []
+            for msg in st.session_state.messages:
+                with st.chat_message(msg["role"]): st.markdown(msg["content"])
+            if prompt := st.chat_input("اسأل..."):
+                st.session_state.messages.append({"role": "user", "content": prompt})
+                with st.chat_message("user"): st.markdown(prompt)
+                with st.chat_message("assistant"):
+                    res = model.generate_content(f"Context:\n{st.session_state.file_content}\nQ: {prompt}")
+                    st.markdown(res.text)
+                    st.session_state.messages.append({"role": "assistant", "content": res.text})
+
+    elif selected == "امتحانات":
+        st.title("📝 الاختبارات")
+        if st.button("امتحان جديد") and "file_content" in st.session_state:
+            try:
+                res = model.generate_content(f"Create 5 MCQ JSON from: {st.session_state.file_content[:4000]} Format: [{{'question':'','options':[],'answer':''}}]")
+                st.session_state.quiz = json.loads(res.text.replace("```json","").replace("```","").strip())
+            except: pass
+        
+        if "quiz" in st.session_state:
+            ans = {}
+            for i, q in enumerate(st.session_state.quiz):
+                st.write(f"**{q['question']}**")
+                ans[i] = st.radio("", q['options'], key=i)
+            if st.button("تصحيح"):
+                score = sum([1 for i, q in enumerate(st.session_state.quiz) if ans[i] == q['answer']])
+                final = (score/5)*100
+                st.success(f"النتيجة: {final}%")
+                update_user_progress(st.session_state.user_email, final)
+
+# --- 6. الفوتر (تم التعديل حسب طلبك) ---
+st.markdown("""
+<div class="footer">
+    <p>جميع الحقوق محفوظة © 2025 | تم التطوير بواسطة <b>عمار حسام</b> 🚀</p>
+    <p class="sub-name"><b>& مريم ابراهيم</b> ✨</p>
+    <p>📞 للتواصل والدعم الفني: <a href="tel:01102353779" style="color: #764abc; text-decoration: none;">01102353779</a></p>
+</div>
+""", unsafe_allow_html=True)
+
+# تشغيل
+if st.session_state.user_email: main_app()
+else: login_page()
+
