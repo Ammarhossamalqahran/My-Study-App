@@ -7,25 +7,21 @@ import json
 import pandas as pd
 from gtts import gTTS
 import io
-import graphviz
-from youtube_transcript_api import YouTubeTranscriptApi
-from streamlit_option_menu import option_menu
 import os
 import datetime
+from youtube_transcript_api import YouTubeTranscriptApi
+from streamlit_option_menu import option_menu
 
 # --- 1. إعداد الصفحة وتصميم Canva ---
-st.set_page_config(page_title="EduMinds - منصتي التعليمية", page_icon="🎓", layout="wide")
+st.set_page_config(page_title="EduMinds - منصتي", page_icon="🎓", layout="wide")
 
-# Custom CSS for Canva-like Look
+# Custom CSS
 st.markdown("""
 <style>
-    /* تغيير الفونت */
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700&display=swap');
-    html, body, [class*="css"] {
-        font-family: 'Cairo', sans-serif;
-    }
+    html, body, [class*="css"] { font-family: 'Cairo', sans-serif; }
     
-    /* تصميم الكروت (Cards) */
+    /* تصميم الكروت */
     .card {
         background-color: #1E1E1E;
         border-radius: 15px;
@@ -35,54 +31,25 @@ st.markdown("""
         border: 1px solid #333;
         transition: transform 0.3s;
     }
-    .card:hover {
-        transform: translateY(-5px);
-        border-color: #764abc;
-    }
+    .card:hover { transform: translateY(-5px); border-color: #764abc; }
     
-    /* تصميم الزراير */
-    .stButton>button {
-        background: linear-gradient(90deg, #764abc 0%, #64379f 100%);
-        color: white;
-        border-radius: 10px;
-        border: none;
-        padding: 10px 20px;
-        font-weight: bold;
-    }
-    .stButton>button:hover {
-        background: linear-gradient(90deg, #8a5cd1 0%, #764abc 100%);
-        color: white;
-    }
-
-    /* الفوتر الجديد (حقوق عمار ومريم) */
+    /* الفوتر */
     .footer {
-        position: fixed;
-        left: 0;
-        bottom: 0;
-        width: 100%;
-        background-color: #0E1117;
-        color: #ffffff;
-        text-align: center;
-        padding: 15px;
-        border-top: 2px solid #764abc;
-        font-size: 15px;
-        z-index: 999;
-        box-shadow: 0 -5px 10px rgba(0,0,0,0.5);
+        position: fixed; left: 0; bottom: 0; width: 100%;
+        background-color: #0E1117; color: #ffffff;
+        text-align: center; padding: 10px;
+        border-top: 2px solid #764abc; font-size: 14px; z-index: 999;
     }
-    .footer b {
-        color: #764abc;
-    }
-    .footer .sub-name {
-        font-size: 13px;
-        color: #bbb;
-        margin-top: -10px;
-        display: block;
+    .footer b { color: #764abc; }
+    
+    /* صورة البروفايل المدورة */
+    .profile-pic {
+        width: 100px; height: 100px;
+        border-radius: 50%; object-fit: cover;
+        margin-bottom: 10px; border: 3px solid #764abc;
     }
     
-    /* إخفاء القوائم الافتراضية */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    
+    #MainMenu {visibility: hidden;} footer {visibility: hidden;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -97,6 +64,10 @@ model = genai.GenerativeModel('gemini-2.0-flash')
 
 # --- 3. دوال وإعدادات النظام ---
 DB_FILE = "users_db.json"
+USER_DATA_DIR = "user_data" # فولدر لحفظ صور المستخدمين
+
+if not os.path.exists(USER_DATA_DIR):
+    os.makedirs(USER_DATA_DIR)
 
 def load_db():
     if not os.path.exists(DB_FILE): return {}
@@ -108,32 +79,45 @@ def save_db(db):
 def get_user_data(email):
     db = load_db()
     if email not in db:
-        db[email] = {"name": email.split('@')[0], "joined": str(datetime.date.today()), "exam_history": []}
+        db[email] = {
+            "name": email.split('@')[0], 
+            "joined": str(datetime.date.today()), 
+            "exam_history": [],
+            "avatar_path": None # مسار الصورة
+        }
         save_db(db)
     return db[email]
 
-def update_user_progress(email, score):
+def update_avatar(email, uploaded_file):
     db = load_db()
-    if email in db:
-        db[email]["exam_history"].append({"date": str(datetime.date.today()), "score": score})
-        save_db(db)
+    # حفظ الصورة في الفولدر
+    file_path = os.path.join(USER_DATA_DIR, f"{email}_avatar.png")
+    with open(file_path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    
+    db[email]["avatar_path"] = file_path
+    save_db(db)
+    return file_path
+
+def get_youtube_text(video_url):
+    try:
+        video_id = video_url.split("v=")[1].split("&")[0]
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['ar', 'en'])
+        full_text = " ".join([entry['text'] for entry in transcript])
+        return full_text
+    except: return None
 
 # دوال القراءة
-def get_pdf_text(file):
-    try: return "".join([p.extract_text() for p in PyPDF2.PdfReader(file).pages])
-    except: return ""
-
-def get_docx_text(file):
-    try: return "\n".join([p.text for p in docx.Document(file).paragraphs])
-    except: return ""
-
 def read_files(files):
     text = ""
     for f in files:
         text += f"\n--- {f.name} ---\n"
-        if f.name.endswith('.pdf'): text += get_pdf_text(f)
-        elif f.name.endswith('.docx'): text += get_docx_text(f)
-        else: text += "[ملف غير مدعوم]"
+        try:
+            if f.name.endswith('.pdf'): 
+                text += "".join([p.extract_text() for p in PyPDF2.PdfReader(f).pages])
+            elif f.name.endswith('.docx'): 
+                text += "\n".join([p.text for p in docx.Document(f).paragraphs])
+        except: text += "[ملف غير مقروء]"
     return text
 
 # --- 4. تسجيل الدخول ---
@@ -154,16 +138,24 @@ def main_app():
     user = get_user_data(st.session_state.user_email)
     
     with st.sidebar:
-        st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
+        # عرض صورة البروفايل
+        if user.get("avatar_path") and os.path.exists(user["avatar_path"]):
+            st.image(user["avatar_path"], width=100)
+        else:
+            st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=100)
+            
         st.write(f"أهلاً، **{user['name']}** 👋")
-        selected = option_menu("القائمة", ["الرئيسية", "ملفاتي", "شات AI", "امتحانات"], 
-                             icons=['house', 'folder', 'chat-dots', 'card-checklist'],
+        
+        selected = option_menu("القائمة", 
+                             ["الرئيسية", "مكتبة الملفات", "يوتيوب 📺", "مذاكرة ممتعة 🎮", "امتحانات", "الإعدادات"], 
+                             icons=['house', 'folder', 'youtube', 'joystick', 'card-checklist', 'gear'],
                              styles={"nav-link-selected": {"background-color": "#764abc"}})
+        
         if st.button("خروج"): 
             st.session_state.user_email = None
             st.rerun()
 
-    # الصفحات
+    # --- الصفحات ---
     if selected == "الرئيسية":
         st.title(f"📊 لوحة تحكم {user['name']}")
         col1, col2, col3 = st.columns(3)
@@ -173,27 +165,53 @@ def main_app():
         if user['exam_history']: avg = sum([x['score'] for x in user['exam_history']])/len(user['exam_history'])
         col3.markdown(f"<div class='card'><h3>⭐ المستوى</h3><p>{avg:.1f}%</p></div>", unsafe_allow_html=True)
 
-    elif selected == "ملفاتي":
-        st.title("📂 مكتبة الملفات")
-        files = st.file_uploader("ارفع الملفات", accept_multiple_files=True)
+    elif selected == "مكتبة الملفات":
+        st.title("📂 ملفاتك الدراسية")
+        files = st.file_uploader("ارفع الكتب والملازم", accept_multiple_files=True)
         if files and st.button("حفظ"):
             st.session_state.file_content = read_files(files)
-            st.success("تم الحفظ!")
+            st.success("تم الحفظ في الذاكرة!")
+        if "file_content" in st.session_state:
+            st.info("✅ يوجد ملفات محملة وجاهزة.")
 
-    elif selected == "شات AI":
-        st.title("💬 المساعد الذكي")
-        if "file_content" not in st.session_state: st.warning("ارفع ملفات الأول")
-        else:
-            if "messages" not in st.session_state: st.session_state.messages = []
-            for msg in st.session_state.messages:
-                with st.chat_message(msg["role"]): st.markdown(msg["content"])
-            if prompt := st.chat_input("اسأل..."):
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                with st.chat_message("user"): st.markdown(prompt)
-                with st.chat_message("assistant"):
-                    res = model.generate_content(f"Context:\n{st.session_state.file_content}\nQ: {prompt}")
+    elif selected == "يوتيوب 📺":
+        st.title("📺 تلخيص اليوتيوب")
+        url = st.text_input("ضع رابط الفيديو هنا:")
+        if st.button("لخص الفيديو") and url:
+            with st.spinner("جاري المشاهدة والتلخيص..."):
+                text = get_youtube_text(url)
+                if text:
+                    res = model.generate_content(f"لخص هذا الفيديو في نقاط تعليمية واضحة:\n{text}")
                     st.markdown(res.text)
-                    st.session_state.messages.append({"role": "assistant", "content": res.text})
+                    # دمج المحتوى مع الذاكرة عشان نسأل فيه
+                    st.session_state.file_content = f"محتوى فيديو يوتيوب:\n{res.text}\n{text}"
+                    st.success("تمت إضافة الفيديو للمذاكرة!")
+                else:
+                    st.error("تأكد أن الفيديو يحتوي على ترجمة (Captions).")
+
+    elif selected == "مذاكرة ممتعة 🎮":
+        st.title("🎮 ذاكر واستمتع")
+        if "file_content" not in st.session_state: st.warning("ارفع ملفات الأول!")
+        else:
+            style = st.selectbox("اختار طريقة الشرح:", 
+                               ["🎤 اشرحلي بأغنية راب", 
+                                "😎 اشرحلي زي صاحبك الجدع (عامية)", 
+                                "📖 اشرحلي كقصة خيال علمي", 
+                                "👶 اشرحلي كأني عندي 5 سنين"])
+            
+            prompt = st.text_input("عايزني أشرحلك إيه بظبط؟ (اكتب اسم الدرس)")
+            
+            if st.button("ابدأ العرض 🎬") and prompt:
+                with st.spinner("بيتقمص الشخصية..."):
+                    persona = ""
+                    if "راب" in style: persona = "أنت مغني راب محترف. اشرح الدرس ده بكلمات مقفاة وإيقاع سريع وممتع."
+                    elif "صاحبك" in style: persona = "أنت صاحب الطالب الانتيم. اشرح بالعامية المصرية وبخفة دم واستخدم أمثلة من حياتنا اليومية."
+                    elif "قصة" in style: persona = "أنت راوي قصص خيالية. حول الدرس ده لقصة ملحمية فيها أبطال وأشرار."
+                    elif "5 سنين" in style: persona = "اشرح بتبسيط شديد جداً كأنك بتكلم طفل، استخدم تشبيهات بسيطة."
+                    
+                    full_prompt = f"{persona}\n\nالمحتوى:\n{st.session_state.file_content}\n\nاشرح: {prompt}"
+                    res = model.generate_content(full_prompt)
+                    st.markdown(res.text)
 
     elif selected == "امتحانات":
         st.title("📝 الاختبارات")
@@ -212,13 +230,27 @@ def main_app():
                 score = sum([1 for i, q in enumerate(st.session_state.quiz) if ans[i] == q['answer']])
                 final = (score/5)*100
                 st.success(f"النتيجة: {final}%")
-                update_user_progress(st.session_state.user_email, final)
+                
+                # تحديث قاعدة البيانات
+                db = load_db()
+                db[st.session_state.user_email]["exam_history"].append({"score": final})
+                save_db(db)
 
-# --- 6. الفوتر (تم التعديل حسب طلبك) ---
+    elif selected == "الإعدادات":
+        st.title("⚙️ الإعدادات")
+        st.write("تغيير الصورة الشخصية")
+        uploaded_avatar = st.file_uploader("ارفع صورة بروفايل جديدة", type=["jpg", "png"])
+        if uploaded_avatar:
+            if st.button("حفظ الصورة"):
+                path = update_avatar(st.session_state.user_email, uploaded_avatar)
+                st.success("تم تحديث الصورة! ستظهر بعد التحديث.")
+                st.rerun()
+
+# --- 6. الفوتر ---
 st.markdown("""
 <div class="footer">
     <p>جميع الحقوق محفوظة © 2025 | تم التطوير بواسطة <b>عمار حسام</b> 🚀</p>
-    <p class="sub-name"><b>& مريم ابراهيم</b> ✨</p>
+    <p style="margin-top: -10px; font-size: 12px;">& <b>مريم ابراهيم</b> ✨</p>
     <p>📞 للتواصل والدعم الفني: <a href="tel:01102353779" style="color: #764abc; text-decoration: none;">01102353779</a></p>
 </div>
 """, unsafe_allow_html=True)
@@ -226,4 +258,3 @@ st.markdown("""
 # تشغيل
 if st.session_state.user_email: main_app()
 else: login_page()
-
