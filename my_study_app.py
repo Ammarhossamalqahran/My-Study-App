@@ -4,10 +4,14 @@ from PIL import Image
 import PyPDF2
 import docx
 import json
-import pandas as pd # عشان الرسوم البيانية والإحصائيات
+import pandas as pd
+from gtts import gTTS
+import io
+import graphviz
+from youtube_transcript_api import YouTubeTranscriptApi
 
 # --- 1. إعداد الصفحة ---
-st.set_page_config(page_title="المدرس الشامل (Pro)", page_icon="🎓", layout="wide")
+st.set_page_config(page_title="المدرس الشامل (Unlimited)", page_icon="🛡️", layout="wide")
 
 # --- 2. إعداد المفتاح ---
 if "GOOGLE_API_KEY" in st.secrets:
@@ -18,199 +22,193 @@ else:
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel('gemini-2.0-flash')
 
-# --- 3. دوال مساعدة ---
+# --- 3. دوال القراءة الذكية (Smart Readers) ---
+
 def get_pdf_text(uploaded_file):
-    pdf_reader = PyPDF2.PdfReader(uploaded_file)
-    text = ""
-    for page in pdf_reader.pages:
-        text += page.extract_text()
-    return text
+    try:
+        pdf_reader = PyPDF2.PdfReader(uploaded_file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() or ""
+        return text
+    except: return "[حدث خطأ أثناء قراءة ملف PDF]"
 
 def get_docx_text(uploaded_file):
-    doc = docx.Document(uploaded_file)
-    full_text = []
-    for para in doc.paragraphs:
-        full_text.append(para.text)
-    return '\n'.join(full_text)
+    try:
+        doc = docx.Document(uploaded_file)
+        full_text = []
+        for para in doc.paragraphs:
+            full_text.append(para.text)
+        return '\n'.join(full_text)
+    except: return "[حدث خطأ أثناء قراءة ملف Word]"
 
-# دالة تنظيف الـ JSON (عشان الذكاء الاصطناعي ساعات بيحط رموز زيادة)
-def clean_json_string(json_str):
-    if "```json" in json_str:
-        json_str = json_str.split("```json")[1].split("```")[0]
-    elif "```" in json_str:
-        json_str = json_str.split("```")[1].split("```")[0]
-    return json_str.strip()
+def get_excel_csv_text(uploaded_file):
+    try:
+        # لو اكسيل أو CSV بنحوله لنص
+        if uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+        else:
+            df = pd.read_excel(uploaded_file)
+        return df.to_string() # تحويل الجدول لنص عشان الموديل يفهمه
+    except: return "[حدث خطأ أثناء قراءة ملف البيانات]"
 
-# --- 4. تهيئة المتغيرات (Session State) ---
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "file_content" not in st.session_state:
-    st.session_state.file_content = ""
-if "exam_history" not in st.session_state:
-    st.session_state.exam_history = [] # لتخزين درجات الامتحانات السابقة
-if "current_quiz" not in st.session_state:
-    st.session_state.current_quiz = None
+def read_any_text_file(uploaded_file):
+    # دي الدالة السحرية لأي ملف نصي (كود، txt، json، srt...)
+    try:
+        # بنحاول نفك تشفير الملف حتى لو فيه رموز غريبة (errors='ignore')
+        return uploaded_file.getvalue().decode("utf-8", errors='ignore')
+    except: return "[ملف غير قابل للقراءة النصية]"
 
-# --- 5. القائمة الجانبية (Sidebar) ---
+def clean_text(text):
+    return text.replace("```json", "").replace("```graphviz", "").replace("```", "").strip()
+
+def text_to_speech_html(text, lang='ar'):
+    try:
+        tts = gTTS(text=text, lang=lang)
+        fp = io.BytesIO()
+        tts.write_to_fp(fp)
+        return fp
+    except: return None
+
+def get_youtube_text(video_url):
+    try:
+        video_id = video_url.split("v=")[1].split("&")[0]
+        transcript = YouTubeTranscriptApi.get_transcript(video_id, languages=['ar', 'en'])
+        full_text = " ".join([entry['text'] for entry in transcript])
+        return full_text
+    except: return None
+
+# --- 4. Session State ---
+if "messages" not in st.session_state: st.session_state.messages = []
+if "file_content" not in st.session_state: st.session_state.file_content = ""
+if "exam_history" not in st.session_state: st.session_state.exam_history = []
+if "current_quiz" not in st.session_state: st.session_state.current_quiz = None
+if "flashcards" not in st.session_state: st.session_state.flashcards = []
+
+# --- 5. القائمة الجانبية (تم إلغاء القيود على نوع الملفات) ---
 with st.sidebar:
-    st.header("🎓 لوحة التحكم")
-    
-    # اختيار الوضع
-    mode = st.radio("اختار عايز تعمل إيه:", ["💬 المذاكرة والشات", "📝 اختبار ومراجعة", "📊 تقييم مستواك"])
+    st.header("🛡️ لوحة التحكم")
+    mode = st.radio("الوضع:", 
+                    ["💬 المذاكرة والشات", "📺 يوتيوب", "🧠 خرائط", "🃏 بطاقات", "📝 اختبار", "📊 تقييم"])
     
     st.divider()
-    st.subheader("📂 المادة العلمية")
-    uploaded_file = st.file_uploader("ارفع الملف هنا", type=["jpg", "png", "pdf", "docx"])
     
-    if uploaded_file is not None:
-        if st.button("معالجة الملف 🚀"):
-            with st.spinner("جاري قراءة الملف..."):
-                try:
-                    filename = uploaded_file.name
-                    if filename.endswith(".docx"):
-                        st.session_state.file_content = get_docx_text(uploaded_file)
-                    elif filename.endswith(".pdf"):
-                        st.session_state.file_content = get_pdf_text(uploaded_file)
-                    else:
-                        image = Image.open(uploaded_file)
-                        response = model.generate_content(["استخرج كل النصوص", image])
-                        st.session_state.file_content = response.text
-                    
-                    st.success("تم التجهيز! المدرس جاهز.")
-                except Exception as e:
-                    st.error(f"خطأ: {e}")
-
-# --- 6. الوضع الأول: الشات ---
-if mode == "💬 المذاكرة والشات":
-    st.title("💬 دردش مع المذكرة")
-    
-    if not st.session_state.file_content:
-        st.info("👈 من فضلك ارفع ملف من القائمة الجانبية الأول.")
-    else:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
-
-        if prompt := st.chat_input("اكتب سؤالك..."):
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            st.session_state.messages.append({"role": "user", "content": prompt})
-
-            full_prompt = f"المحتوى التعليمي:\n{st.session_state.file_content}\n\nسؤال الطالب: {prompt}\nجاوب كأستاذ محترف."
-            
-            with st.chat_message("assistant"):
-                with st.spinner("بيكتب..."):
-                    response = model.generate_content(full_prompt)
-                    st.markdown(response.text)
-                    st.session_state.messages.append({"role": "assistant", "content": response.text})
-
-# --- 7. الوضع الثاني: الامتحانات ---
-elif mode == "📝 اختبار ومراجعة":
-    st.title("📝 اختبر نفسك")
-    
-    if not st.session_state.file_content:
-        st.warning("ارفع الملف الأول عشان أعرف أمتحنك فيه!")
-    else:
-        col1, col2 = st.columns(2)
-        with col1:
-            num_questions = st.slider("عدد الأسئلة", 3, 10, 5)
-        with col2:
-            difficulty = st.select_slider("مستوى الصعوبة", options=["سهل", "متوسط", "صعب"])
-
-        if st.button("أنشئ الامتحان الآن 🎲"):
-            with st.spinner("المدرس بيحط الأسئلة..."):
-                quiz_prompt = f"""
-                Create a quiz based on this text: "{st.session_state.file_content[:4000]}..."
-                Create {num_questions} multiple choice questions. Difficulty: {difficulty}.
-                The output MUST be a valid JSON array of objects. 
-                Each object must have: "question", "options" (array of 4 strings), and "answer" (the correct string).
-                Example format:
-                [
-                    {{"question": "What is...?", "options": ["A", "B", "C", "D"], "answer": "A"}}
-                ]
-                Response Language: Arabic.
-                ONLY JSON. NO MARKDOWN.
-                """
-                try:
-                    response = model.generate_content(quiz_prompt)
-                    cleaned_json = clean_json_string(response.text)
-                    st.session_state.current_quiz = json.loads(cleaned_json)
-                    st.rerun()
-                except Exception as e:
-                    st.error("حصلت مشكلة في إنشاء الامتحان، حاول تاني.")
-                    st.write(e)
-
-        # عرض الامتحان لو موجود
-        if st.session_state.current_quiz:
-            with st.form("quiz_form"):
-                user_answers = {}
-                for i, q in enumerate(st.session_state.current_quiz):
-                    st.subheader(f"س {i+1}: {q['question']}")
-                    user_answers[i] = st.radio("الإجابة:", q['options'], key=f"q_{i}")
-                    st.write("---")
+    if mode != "📺 يوتيوب":
+        st.subheader("📂 ارفع أي ملف في الدنيا")
+        # التعديل السحري: شلنا type=... عشان يقبل كله
+        uploaded_files = st.file_uploader("Drop any file here", accept_multiple_files=True)
+        
+        if uploaded_files and st.button("تحليل الملفات 🚀"):
+            with st.spinner("جاري فك شفرة الملفات..."):
+                combined_text = ""
+                file_count = 0
                 
-                submitted = st.form_submit_button("تسليم الإجابة ✅")
-                
-                if submitted:
-                    score = 0
-                    total = len(st.session_state.current_quiz)
-                    
-                    st.write("### 📄 نتيجة الامتحان:")
-                    for i, q in enumerate(st.session_state.current_quiz):
-                        correct = q['answer']
-                        user_choice = user_answers[i]
+                # حلقة تكرارية ذكية بتشوف نوع الملف وتختار الأداة المناسبة
+                for file in uploaded_files:
+                    try:
+                        file_text = ""
+                        fname = file.name.lower()
+                        combined_text += f"\n\n--- ملف: {file.name} ---\n"
                         
-                        if user_choice == correct:
-                            score += 1
-                            st.success(f"س {i+1}: إجابة صحيحة! ({user_choice})")
+                        # توجيه الملفات للأدوات المناسبة
+                        if fname.endswith('.pdf'):
+                            file_text = get_pdf_text(file)
+                        elif fname.endswith('.docx'):
+                            file_text = get_docx_text(file)
+                        elif fname.endswith(('.xlsx', '.xls', '.csv')):
+                            file_text = get_excel_csv_text(file)
+                        elif fname.endswith(('.png', '.jpg', '.jpeg', '.webp')):
+                            try:
+                                image = Image.open(file)
+                                res = model.generate_content(["استخرج كل النصوص المكتوبة في الصورة", image])
+                                file_text = res.text
+                            except: file_text = "[صورة غير صالحة]"
                         else:
-                            st.error(f"س {i+1}: خطأ. إجابتك: {user_choice} | الصح: {correct}")
-                    
-                    final_score = (score / total) * 100
-                    st.metric(label="الدرجة النهائية", value=f"{final_score}%")
-                    
-                    # حفظ النتيجة في التاريخ
-                    st.session_state.exam_history.append({"Score": final_score, "Difficulty": difficulty, "Questions": total})
-                    
-                    if final_score >= 50:
-                        st.balloons()
-                    else:
-                        st.warning("محتاج تذاكر أكتر! 📚")
+                            # لأي ملف تاني (txt, py, java, html, json...)
+                            file_text = read_any_text_file(file)
+                        
+                        combined_text += file_text
+                        file_count += 1
+                        
+                    except Exception as e:
+                        # لو ملف ضرب، نكتب اسمه ونكمل عادي من غير ما البرنامج يقع
+                        combined_text += f"\n[فشل قراءة هذا الملف: {str(e)}]\n"
+                
+                st.session_state.file_content = combined_text
+                if file_count > 0:
+                    st.success(f"تمت قراءة {file_count} ملفات بنجاح! مهما كان نوعهم.")
+                else:
+                    st.warning("لم يتم استخراج نصوص مفيدة.")
 
-# --- 8. الوضع الثالث: تقييم الأداء ---
-elif mode == "📊 تقييم مستواك":
-    st.title("📊 تقرير الأداء الشامل")
-    
-    if len(st.session_state.exam_history) == 0:
-        st.info("لسه مفيش بيانات. ادخل وحل امتحانات الأول عشان أقيمك!")
+# --- 6. باقي الأوضاع (زي ما هي) ---
+
+if mode == "💬 المذاكرة والشات":
+    st.title("💬 الشات المدرع")
+    if not st.session_state.file_content: st.info("ارفع أي ملف (Excel, Word, Code...) 👈")
     else:
-        # تحويل البيانات لجدول عشان نعرضها
-        df = pd.DataFrame(st.session_state.exam_history)
-        
-        # 1. ملخص سريع
-        col1, col2, col3 = st.columns(3)
-        col1.metric("عدد الامتحانات", len(df))
-        col2.metric("متوسط الدرجات", f"{df['Score'].mean():.1f}%")
-        col3.metric("أفضل درجة", f"{df['Score'].max()}%")
-        
-        st.divider()
-        
-        # 2. رسم بياني للتقدم
-        st.subheader("📈 منحنى التقدم بتاعك")
-        st.line_chart(df['Score'])
-        
-        # 3. نصيحة من المدرس
-        avg = df['Score'].mean()
-        st.subheader("👨‍🏫 تقييم المدرس:")
-        if avg >= 85:
-            st.success("مستواك ممتاز يا بطل! استمر على كده. 🌟")
-        elif avg >= 70:
-            st.info("مستوى جيد جداً، بس ركز شوية في التفاصيل. 👍")
-        elif avg >= 50:
-            st.warning("مستواك متوسط، محتاج تحل أسئلة أكتر وتراجع الأخطاء. ⚠️")
-        else:
-            st.error("المستوى ضعيف. أنصحك ترجع تقرأ المذكرة تاني وتستخدم الشات عشان تفهم اللي فاتك. 🛑")
-        
-        # عرض الجدول بالتفصيل
-        with st.expander("سجل الامتحانات السابق"):
-            st.dataframe(df)
+        for msg in st.session_state.messages:
+            with st.chat_message(msg["role"]): st.markdown(msg["content"])
+        if prompt := st.chat_input("اكتب سؤالك..."):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user"): st.markdown(prompt)
+            with st.chat_message("assistant"):
+                with st.spinner("بيحلل..."):
+                    # نظام أمان عشان لو النص كبير جداً
+                    content_snippet = st.session_state.file_content[:30000] 
+                    full_prompt = f"المحتوى:\n{content_snippet}\n\nسؤال: {prompt}\nجاوب باحترافية."
+                    try:
+                        response = model.generate_content(full_prompt)
+                        st.markdown(response.text)
+                        st.session_state.messages.append({"role": "assistant", "content": response.text})
+                    except Exception as e:
+                        st.error("الذكاء الاصطناعي واجه مشكلة بسيطة، حاول تسأل بصيغة تانية.")
+
+elif mode == "📺 يوتيوب":
+    st.title("📺 يوتيوب")
+    url = st.text_input("الرابط:")
+    if st.button("لخص") and url:
+        yt_text = get_youtube_text(url)
+        if yt_text:
+            res = model.generate_content(f"لخص: {yt_text}")
+            st.write(res.text)
+            st.session_state.file_content = yt_text
+        else: st.error("فيديو بدون ترجمة أو رابط خطأ")
+
+elif mode == "🧠 خرائط":
+    st.title("🧠 خرائط")
+    if st.button("رسم") and st.session_state.file_content:
+        res = model.generate_content(f"Create Graphviz DOT code for: {st.session_state.file_content[:5000]} inside graphviz block")
+        try: st.graphviz_chart(clean_text(res.text))
+        except: st.error("تعذر الرسم")
+
+elif mode == "🃏 بطاقات":
+    st.title("🃏 بطاقات")
+    if st.button("إنشاء") and st.session_state.file_content:
+        try:
+            res = model.generate_content(f"Extract 5 terms JSON from: {st.session_state.file_content[:4000]} as [{{'term':'','definition':''}}]")
+            st.session_state.flashcards = json.loads(clean_text(res.text))
+        except: pass
+    for c in st.session_state.flashcards: st.info(f"{c['term']}: {c['definition']}")
+
+elif mode == "📝 اختبار":
+    st.title("📝 اختبار")
+    if st.button("جديد") and st.session_state.file_content:
+        try:
+            res = model.generate_content(f"Create 5 MCQ JSON from: {st.session_state.file_content[:5000]} as [{{'question':'','options':[],'answer':''}}]")
+            st.session_state.current_quiz = json.loads(clean_text(res.text))
+            st.rerun()
+        except: pass
+    if st.session_state.current_quiz:
+        with st.form("q"):
+            ans = {}
+            for i,q in enumerate(st.session_state.current_quiz):
+                st.write(q['question'])
+                ans[i] = st.radio("", q['options'], key=i)
+            if st.form_submit_button("تصحيح"):
+                sc = sum([1 for i,q in enumerate(st.session_state.current_quiz) if ans[i]==q['answer']])
+                st.write(f"{sc}/5")
+                st.session_state.exam_history.append({"Score": sc*20})
+
+elif mode == "📊 تقييم":
+    st.title("📊 تقييم")
+    if st.session_state.exam_history: st.line_chart(pd.DataFrame(st.session_state.exam_history)['Score'])
