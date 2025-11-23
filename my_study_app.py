@@ -9,7 +9,6 @@ import io
 import PyPDF2
 import docx
 from streamlit_option_menu import option_menu
-from youtube_transcript_api import YouTubeTranscriptApi
 
 # --- 1. الإعدادات الأساسية ---
 st.set_page_config(page_title="EduMinds - منصتي", page_icon="🎓", layout="wide")
@@ -72,39 +71,4 @@ def save_exam_result(email, score):
 
 def add_system_announcement(type, title, message):
     db = load_json(SYSTEM_DB_FILE)
-    new_item = {"date": str(datetime.date.today()), "title": title, "message": message}
-    if type == "notification":
-        db["notifications"].insert(0, new_item)
-    else:
-        db["events"].insert(0, new_item)
-    save_json(SYSTEM_DB_FILE, db)
-
-def clear_announcements(type):
-    db = load_json(SYSTEM_DB_FILE)
-    db[type] = []
-    save_json(SYSTEM_DB_FILE, db)
-
-# --- 3. واجهة تسجيل الدخول ---
-if "user_email" not in st.session_state: st.session_state.user_email = None
-
-def login_page():
-    st.markdown("<h1 style='text-align: center; color: #764abc;'>🔐 EduMinds Login</h1>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        with st.form("login"):
-            email = st.text_input("📧 البريد الإلكتروني:")
-            if st.form_submit_button("دخول") and "@" in email:
-                st.session_state.user_email = email.lower().strip()
-                st.rerun()
-
-# --- 4. التطبيق الرئيسي ---
-def main_app():
-    email = st.session_state.user_email
-    user = get_user(email)
-    is_admin = email in ADMIN_EMAILS
-    
-    system_data = load_json(SYSTEM_DB_FILE)
-
-    # القائمة الجانبية
-    with st.sidebar:
-        if user.get("avatar_path") and os.path.exists(user
+    new_item = {"date": str(datetime.date.today()), "title
