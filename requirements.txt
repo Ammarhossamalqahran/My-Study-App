@@ -2,4 +2,7 @@ streamlit
 google-generativeai
 python-docx
 PyPDF2
-Pillow
+pandas
+gTTS
+graphviz
+youtube-transcript-api
