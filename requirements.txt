@@ -6,3 +6,4 @@ pandas
 gTTS
 graphviz
 youtube-transcript-api
+streamlit-option-menu
