@@ -14,7 +14,7 @@ from streamlit_option_menu import option_menu
 
 # --- 1. إعدادات الأدمن والمفتاح ---
 # ⚠️ هام: اكتب إيميلاتكم الحقيقية هنا عشان تظهرلكم لوحة الأدمن
-ADMIN_EMAILS = ["amarhossam0000@gmail.com"] 
+ADMIN_EMAILS = ["amarhossam0000@gmail.com ,[mariameberahim8888@gmail.com"] 
 
 if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
@@ -292,3 +292,4 @@ st.markdown("""
 
 if st.session_state.user_email: main_app()
 else: login_page()
+
