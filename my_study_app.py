@@ -13,17 +13,16 @@ st.set_page_config(page_title="EduMinds - المتكامل", page_icon="🧠", l
 
 ADMIN_EMAILS = ["amarhossam0000@gmail.com", "mariamebrahim8888@gmail.com"]
 
-# --- 2. إعداد المفتاح والموديل (آمن) ---
+# --- 2. إعداد المفتاح من الخزنة (التصحيح هنا) ---
 try:
-    if "GOOGLE_API_KEY" in st.secrets:
-        api_key = st.secrets["GOOGLE_API_KEY"]
-    else:
-       
-    
+    api_key = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('models/gemini-pro') 
+    model = genai.GenerativeModel('gemini-pro')
+    st.session_state.gemini_ready = True # إضافة حالة للتحقق
 except Exception as e:
-    st.error("⚠️ فشل الاتصال بخدمة Gemini. تأكد من المفتاح في Secrets.")
+    st.session_state.gemini_ready = False
+    # لاحظ المسافات (Tab) قبل كلمة st.error
+    st.error("⚠️ فشل الاتصال بخدمة Gemini. تأكد من مفتاح API في الخزنة (Secrets).")
     st.stop()
 
 # --- 3. قواعد البيانات ---
@@ -192,4 +191,5 @@ if __name__ == "__main__":
     # هذا الجزء يحتاج لتعديل بسيط لإضافة صفحة تسجيل الدخول التي كانت تعمل سابقاً
     # تم حذفه مؤقتاً لتسهيل التركيز على الواجهات الجديدة
     app_controller()
+
 
