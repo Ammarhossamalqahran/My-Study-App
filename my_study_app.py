@@ -4,38 +4,80 @@ import json
 import os
 import datetime
 import pandas as pd
+from gtts import gTTS
+import io
 import PyPDF2
 import docx
 from streamlit_option_menu import option_menu
 
-# --- 1. الإعدادات الأساسية والمفاتيح ---
-st.set_page_config(page_title="EduMinds - الإصدار النهائي", page_icon="💡", layout="wide")
+# --- 1. الإعدادات الأساسية ---
+st.set_page_config(page_title="منصة عمار التعليمية", page_icon="🎓", layout="wide")
 
 ADMIN_EMAILS = ["amarhossam0000@gmail.com", "mariamebrahim8888@gmail.com"]
 
-# إعداد المفتاح من الخزنة (الآمن)
+# --- 2. إعداد المفتاح ---
 try:
     if "GOOGLE_API_KEY" in st.secrets:
         api_key = st.secrets["GOOGLE_API_KEY"]
     else:
-        # إذا لم يتم العثور عليه، ضع المفتاح القديم كاحتياطي أخير
-        api_key = "AIzaSyDDvLq3YjF9IrgWY51mD2RCHU2b7JF75Tk" 
+        api_key = "AIzaSyCq9dJgYood8SQ9e2nPLDtxa2hc8XFJrWU"
     
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-pro') 
-except Exception as e:
-    st.error("⚠️ فشل الاتصال بخدمة Gemini. تأكد من مفتاح API في Secrets.")
-    st.stop()
+    
+    # !!! التصحيح النهائي: إضافة models/ لضمان عمل الموديل على السيرفر !!!
+    model = genai.GenerativeModel('models/gemini-pro')
 
-# --- 2. قواعد البيانات ---
+except Exception as e:
+    st.error(f"⚠️ فشل الاتصال بخدمة Gemini. تأكد من المفتاح في Secrets.")
+    st.stop() 
+
+# --- 3. قواعد البيانات ---
 USER_DB = "users_db.json"
 SYSTEM_DB = "system_db.json"
+
+if not os.path.exists("user_data"): os.makedirs("user_data")
 if not os.path.exists(USER_DB): 
     with open(USER_DB, 'w') as f: json.dump({}, f)
 if not os.path.exists(SYSTEM_DB): 
-    with open(SYSTEM_DB, 'w') as f: json.dump({"notifications": []}, f)
+    with open(SYSTEM_DB, 'w') as f: json.dump({"notifications": [], "events": []}, f)
 
-# --- الدوال الأساسية (معالجة الملفات) ---
+# --- 4. الدوال ---
+def load_json(filename):
+    try:
+        with open(filename, 'r') as f: return json.load(f)
+    except: return {}
+
+def save_json(filename, data):
+    with open(filename, 'w') as f: json.dump(data, f, indent=4)
+
+def get_user(email):
+    db = load_json(USER_DB)
+    if email not in db:
+        db[email] = {"name": email.split('@')[0], "joined": str(datetime.date.today()), "history": []}
+        save_json(USER_DB, db)
+    
+    if "history" not in db[email]:
+        db[email]["history"] = db[email].get("exam_history", []) 
+        save_json(USER_DB, db)
+    
+    return db[email]
+
+def save_score(email, score):
+    db = load_json(USER_DB)
+    if "history" not in db[email]: db[email]["history"] = []
+    db[email]["history"].append({"date": str(datetime.date.today()), "score": score})
+    save_json(USER_DB, db)
+
+def add_notification(msg):
+    db = load_json(SYSTEM_DB)
+    db["notifications"].insert(0, {"date": str(datetime.date.today()), "msg": msg})
+    save_json(SYSTEM_DB, db)
+
+def clear_announcements(type):
+    db = load_json(SYSTEM_DB)
+    db[type] = []
+    save_json(SYSTEM_DB, db)
+
 def read_file_content(uploaded_file):
     text = ""
     try:
@@ -52,34 +94,9 @@ def read_file_content(uploaded_file):
         st.error(f"فشل قراءة الملف: {e}")
         return ""
 
-def get_user(email):
-    db = load_json(USER_DB)
-    if email not in db:
-        db[email] = {"name": email.split('@')[0], "history": []}
-        save_json(USER_DB, db)
-    # لضمان وجود مفتاح 'history' من أي كود سابق
-    if "history" not in db[email]:
-        db[email]["history"] = db[email].get("exam_history", []) 
-        save_json(USER_DB, db)
-    return db[email]
-
-def load_json(filename):
-    try:
-        with open(filename, 'r') as f: return json.load(f)
-    except: return {}
-
-def save_json(filename, data):
-    with open(filename, 'w') as f: json.dump(data, f, indent=4)
-
-def save_score(email, score):
-    db = load_json(USER_DB)
-    db[email]["history"].append({"date": str(datetime.date.today()), "score": score})
-    save_json(USER_DB, db)
-
-# --- 3. واجهات المربعات (Flow Pages) ---
+# --- 5. واجهات العمل (Pages) ---
 
 def quiz_mode():
-    """مربع أحمر: إنشاء امتحان سريع."""
     st.title("🔴 اختبار من الملف")
     uploaded_file = st.file_uploader("ارفع الملف المطلوب الاختبار منه:", type=['pdf', 'docx', 'txt'])
     
@@ -93,16 +110,16 @@ def quiz_mode():
                     prompt = """Create 3 MCQ questions JSON format: [{"question":"..","options":[".."],"answer":".."}]"""
                     res = model.generate_content(f"{prompt}\nContext: {content[:3000]}")
                     st.session_state.quiz = json.loads(res.text.replace("```json","").replace("```","").strip())
-                    st.rerun() # إعادة تحميل لعرض الاختبار
+                    st.rerun() 
                 except:
                     st.error("فشل إنشاء الاختبار. حاول تصغير الملف.")
-
+        
         if "quiz" in st.session_state:
-            score = 0
-            # [كود عرض وتصحيح الامتحان]
+            # (كود عرض الاختبار والتصحيح)
+            st.write("عرض الاختبار هنا...")
+
 
 def summary_mode():
-    """مربع بنفسجي: تلخيص وشرح المواد."""
     st.title("🟣 ملخصات وشرح")
     uploaded_file = st.file_uploader("ارفع الملف المطلوب تلخيصه:", type=['pdf', 'docx', 'txt'])
 
@@ -110,12 +127,12 @@ def summary_mode():
         content = read_file_content(uploaded_file)
         if st.button("تلخيص الآن"):
             with st.spinner("جاري تلخيص المحتوى..."):
+                # الكود اللي كان بيضرب Error هنا
                 res = model.generate_content(f"لخص هذا النص التعليمي في نقاط بسيطة:\n{content[:10000]}")
                 st.subheader("الملخص")
                 st.write(res.text)
 
 def chat_mode():
-    """مربع أزرق: سؤال وجواب مباشر (Q&A)."""
     st.title("🔵 أسئلة سريعة")
     uploaded_file = st.file_uploader("ارفع الملف للمحادثة عليه:", type=['pdf', 'docx', 'txt'])
 
@@ -131,7 +148,6 @@ def chat_mode():
                 st.write(f"**الإجابة:** {res.text}")
 
 def grades_mode(user_email):
-    """مربع برتقالي: عرض التطور والدرجات."""
     st.title("🟠 سجل الدرجات والتطور")
     user = get_user(user_email)
     if user['history']:
@@ -143,67 +159,65 @@ def grades_mode(user_email):
         st.info("لا توجد بيانات امتحانات مسجلة حتى الآن.")
 
 def admin_mode():
-    """لوحة الأدمن (مختصرة)."""
     st.title("🛡️ لوحة الأدمن")
     st.markdown("---")
-    st.subheader("📢 نشر إشعارات")
-    msg = st.text_area("رسالة جديدة للطلاب:")
-    if st.button("نشر إشعار عام"):
-        add_notification(msg)
-        st.success("تم النشر!")
+    
+    tab1, tab2 = st.tabs(["📢 الإشعارات", "👥 المستخدمين"])
+    
+    with tab1:
+        st.subheader("نشر إشعارات")
+        msg = st.text_area("رسالة جديدة للطلاب:")
+        if st.button("نشر إشعار عام"):
+            add_notification(msg)
+            st.success("تم النشر بنجاح!")
+    
+    with tab2:
+        st.header("إحصائيات المستخدمين")
+        db = load_json(USER_DB)
+        users_data_list = []
+        for email, data in db.items():
+            history = data.get('history', [])
+            avg_score = f"{sum([x['score'] for x in history]) / len(history):.1f}%" if history else "جديد"
+            
+            users_data_list.append({
+                "الإيميل": email,
+                "الاسم": data['name'],
+                "الامتحانات": len(history),
+                "المستوى": avg_score
+            })
         
-# --- 4. واجهة المربعات الرئيسية ---
+        if users_data_list:
+            df = pd.DataFrame(users_data_list)
+            st.dataframe(df, use_container_width=True)
+
+# --- 6. التنفيذ (Control Flow) ---
+# ... (نفس كود التحكم في الصفحة) ...
 
 def dashboard_page():
     st.title("🏠 EduMinds | اختر ما تود فعله")
     st.markdown("---")
-
-    # تحديد 3 أعمدة
     col1, col2, col3 = st.columns(3)
 
-    # دالة لرسم المربع (Tile) باستخدام HTML
-    def display_tile(col, title, emoji, color, page_name):
-        # استخدام st.button داخل عمود لإعطاء تأثير المربع
+    def display_tile(col, title, emoji, page_name):
         button_clicked = col.button(f"{emoji} {title}", key=title, use_container_width=True)
-        # تخصيص لون الزرار عبر CSS (حل مؤقت لعدم وجود خاصية لون للزرار في ستريملت)
-        col.markdown(
-            f"""
-            <style>
-            div[data-testid*="stButton"] > button[kind="primary"] {{
-                background-color: #764abc; /* اللون الأساسي للقائمة */
-            }}
-            div[data-testid*="stButton"] > button[kind="primary"]:hover {{
-                background-color: #5d3d92;
-            }}
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
         if button_clicked:
             st.session_state.action = page_name
             st.rerun()
 
-    # إنشاء المربعات المطلوبة
-    display_tile(col1, "اختبارات وامتحانات", "🔴", "#FF6347", "QUIZ") # أحمر
-    display_tile(col2, "سؤال وجواب مباشر", "🔵", "#4682B4", "CHAT")  # أزرق
-    display_tile(col3, "تلخيص وشرح المواد", "🟣", "#8A2BE2", "SUMMARY") # بنفسجي
+    display_tile(col1, "اختبارات وامتحانات", "🔴", "QUIZ") 
+    display_tile(col2, "سؤال وجواب مباشر", "🔵", "CHAT")
+    display_tile(col3, "تلخيص وشرح المواد", "🟣", "SUMMARY")
 
     col4, col5, col6 = st.columns(3)
-    display_tile(col4, "مستواي الدراسي", "🟠", "#FFA500", "GRADES") # برتقالي
+    display_tile(col4, "مستواي الدراسي", "🟠", "GRADES")
 
-    # زر لوحة الأدمن (يظهر فقط إذا كان المستخدم أدمن)
     if st.session_state.user_email in ADMIN_EMAILS:
-        display_tile(col6, "لوحة الأدمن", "🛡️", "#008080", "ADMIN")
-
-# --- 5. التنفيذ (Control Flow) ---
+        display_tile(col6, "لوحة الأدمن", "🛡️", "ADMIN")
 
 def app_controller():
-    # التحقق من تسجيل الدخول
-    if "user_email" not in st.session_state:
-        st.session_state.user_email = None
+    if "user_email" not in st.session_state: st.session_state.user_email = None
 
     if not st.session_state.user_email:
-        # عرض صفحة الدخول
         st.markdown("<h1 style='text-align: center;'>🔐 EduMinds Login</h1>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -211,11 +225,11 @@ def app_controller():
                 email_input = st.text_input("البريد الإلكتروني:")
                 if st.form_submit_button("تسجيل الدخول") and "@" in email_input:
                     st.session_state.user_email = email_input.lower().strip()
-                    st.session_state.action = "DASHBOARD" # بعد الدخول يروح للرئيسية
+                    st.session_state.action = "DASHBOARD"
                     st.rerun()
         return
 
-    # القائمة الجانبية (ثابتة)
+    # القائمة الجانبية
     with st.sidebar:
         user = get_user(st.session_state.user_email)
         st.write(f"أهلاً، **{user['name']}**")
@@ -230,7 +244,6 @@ def app_controller():
             st.session_state.action = "DASHBOARD"
             st.rerun()
 
-    # التحكم في الصفحة المعروضة
     action = st.session_state.get("action", "DASHBOARD")
     
     if action == "DASHBOARD":
