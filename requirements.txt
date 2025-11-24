@@ -1,8 +1,7 @@
 streamlit
 google-generativeai>=0.7.0
-gTTS
 pandas
 PyPDF2
 python-docx
 streamlit-option-menu
-youtube-transcript-api
+gTTS
