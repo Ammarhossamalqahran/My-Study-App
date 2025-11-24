@@ -13,33 +13,28 @@ from streamlit_option_menu import option_menu
 # --- 1. إعداد الصفحة ---
 st.set_page_config(page_title="منصة عمار التعليمية", page_icon="🎓", layout="wide")
 
-# قائمة الإيميلات اللي مسموح ليها تفتح لوحة الأدمن
-# (اكتب إيميلك هنا عشان تشوف اللوحة)
+# قائمة الأدمن
 ADMIN_EMAILS = ["amarhossam0000@gmail.com", "mariamebrahim8888@gmail.com"]
 
-# --- 2. إعداد المفتاح والموديل ---
+# --- 2. إعداد المفتاح (آمن 100%) ---
 try:
-    # بيحاول يجيب المفتاح من الخزنة السرية للسيرفر
-    if "GOOGLE_API_KEY" in st.secrets:
-        api_key = st.secrets["GOOGLE_API_KEY"]
-    else:
-        # مفتاح احتياطي للتجربة
-        api_key = "AIzaSyCq9dJgYood8SQ9e2nPLDtxa2hc8XFJrWU"
-    
+    # الكود هنا بيجيب المفتاح من الخزنة بس
+    api_key = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
     
-    # !!! رجعنا للموديل المستقر عشان يحل مشكلة السيرفر !!!
+    # استخدام الموديل المستقر
     model = genai.GenerativeModel('gemini-pro')
 
 except Exception as e:
-    st.error(f"خطأ في الاتصال: {e}")
+    # رسالة لو نسيت تحط المفتاح في الخزنة
+    st.error("⚠️ لم يتم العثور على مفتاح API في الخزنة (Secrets).")
+    st.stop() # يوقف البرنامج عشان ميكملش غلط
 
 # --- 3. قواعد البيانات ---
 if not os.path.exists("user_data"): os.makedirs("user_data")
 USER_DB = "users_db.json"
 SYSTEM_DB = "system_db.json"
 
-# إنشاء الملفات لو مش موجودة
 if not os.path.exists(USER_DB): 
     with open(USER_DB, 'w') as f: json.dump({}, f)
 if not os.path.exists(SYSTEM_DB): 
@@ -56,6 +51,7 @@ def save_json(filename, data):
 
 def get_user(email):
     db = load_json(USER_DB)
+    
     if email not in db:
         db[email] = {
             "name": email.split('@')[0],
@@ -63,10 +59,20 @@ def get_user(email):
             "history": []
         }
         save_json(USER_DB, db)
+    
+    # تصليح الخطأ القديم (لو موجود)
+    if "history" not in db[email]:
+        if "exam_history" in db[email]:
+            db[email]["history"] = db[email]["exam_history"]
+        else:
+            db[email]["history"] = []
+        save_json(USER_DB, db)
+    
     return db[email]
 
 def save_score(email, score):
     db = load_json(USER_DB)
+    if "history" not in db[email]: db[email]["history"] = []
     db[email]["history"].append({"date": str(datetime.date.today()), "score": score})
     save_json(USER_DB, db)
 
@@ -102,14 +108,12 @@ def main():
         st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
         st.write(f"أهلاً **{user['name']}**")
         
-        # عرض آخر إشعار
         if sys_data.get("notifications"):
             st.info(f"🔔 {sys_data['notifications'][0]['msg']}")
 
         menu = ["الرئيسية", "مذاكرة", "امتحانات", "حسابي"]
         icons = ['house', 'book', 'pencil', 'person']
         
-        # إضافة لوحة الأدمن لو المستخدم هو أنت
         if is_admin:
             menu.append("لوحة الأدمن")
             icons.append("shield-lock")
@@ -127,6 +131,7 @@ def main():
         
         col1, col2 = st.columns(2)
         col1.metric("عدد الامتحانات", len(user['history']))
+        
         if user['history']:
             avg = sum([x['score'] for x in user['history']]) / len(user['history'])
             col2.metric("مستواك العام", f"{avg:.1f}%")
@@ -157,13 +162,12 @@ def main():
         if "content" in st.session_state:
             q = st.chat_input("اسألني...")
             if q:
-                # طلب بسيط ومضمون للموديل المستقر
                 prompt = f"Context: {st.session_state.content[:10000]}\nQuestion: {q}\nAnswer in Arabic."
                 try:
                     res = model.generate_content(prompt)
                     st.write(res.text)
                 except Exception as e:
-                    st.error("حدث خطأ في الاتصال، حاول مرة أخرى.")
+                    st.error("حدث خطأ في الاتصال.")
 
     elif selected == "امتحانات":
         st.title("📝 امتحان فوري")
@@ -201,7 +205,6 @@ def main():
 
     elif selected == "لوحة الأدمن":
         st.title("👮‍♂️ لوحة التحكم")
-        st.write("أهلاً يا أدمن!")
         
         tab1, tab2 = st.tabs(["📢 الإشعارات", "👥 المستخدمين"])
         
