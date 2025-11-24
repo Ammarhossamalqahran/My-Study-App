@@ -14,17 +14,17 @@ st.set_page_config(page_title="EduMinds - المتكامل", page_icon="🎓", l
 ADMIN_USERS = ["amarhossam0000", "mariamebrahim8888"] 
 
 # --- 2. إعداد المفتاح والموديل (آمن) ---
+# --- 2. إعداد المفتاح والموديل (آمن 100%) ---
 try:
-    if "GOOGLE_API_KEY" in st.secrets:
-        api_key = st.secrets["GOOGLE_API_KEY"]
-    else:
-        api_key = "YOUR_API_KEY_HERE" # مفتاح احتياطي
+    # يجب أن يكون المفتاح في الخزنة الآن
+    api_key = st.secrets["GOOGLE_API_KEY"] 
     
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('models/gemini-pro') 
     st.session_state.gemini_ready = True
 except Exception as e:
-    st.error("⚠️ فشل الاتصال بخدمة Gemini. تأكد من المفتاح في Secrets.")
+    # لو فشل، توقف واطلب من المستخدم وضع المفتاح في الخزنة
+    st.error("⚠️ فشل الاتصال بخدمة Gemini. تأكد أن المفتاح الجديد موجود في الخزنة (Secrets) باسم GOOGLE_API_KEY.")
     st.stop()
 
 # --- 3. قواعد البيانات ---
@@ -218,4 +218,5 @@ def app_controller():
 
 if __name__ == "__main__":
     app_controller()
+
 
