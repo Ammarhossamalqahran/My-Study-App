@@ -30,13 +30,21 @@ except Exception as e:
     st.error("⚠️ فشل الاتصال بخدمة Gemini. تأكد من المفتاح في Secrets.")
     st.stop() 
 
-# --- 3. قواعد البيانات ---
+# --- 3. قواعد البيانات ---# --- 3. قواعد البيانات (هيكل مصحح) ---
 USER_DB = "users_db.json"
 SYSTEM_DB = "system_db.json"
 
-if not os.path.exists("user_data"): os.makedirs("user_data")
-if not os.path.exists(USER_DB): with open(USER_DB, 'w') as f: json.dump({}, f) # ❌❌ الخطأ كان هنا ❌❌
-if not os.path.exists(SYSTEM_DB): with open(SYSTEM_DB, 'w') as f: json.dump({"notifications": [], "events": []}, f) # ❌❌ وهنا ❌❌
+if not os.path.exists("user_data"): 
+    os.makedirs("user_data")
+
+# ✅ هيكل الـ IF/WITH الصحيح:
+if not os.path.exists(USER_DB): 
+    with open(USER_DB, 'w') as f: 
+        json.dump({}, f)
+
+if not os.path.exists(SYSTEM_DB): 
+    with open(SYSTEM_DB, 'w') as f: 
+        json.dump({"notifications": [], "events": []}, f)
 # (الدوال الأساسية)
 def load_json(filename):
     try:
@@ -209,4 +217,5 @@ def app_controller():
 
 if __name__ == "__main__":
     app_controller()
+
 
