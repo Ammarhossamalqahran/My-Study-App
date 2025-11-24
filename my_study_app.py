@@ -23,6 +23,8 @@ else:
     api_key = "AIzaSyDDvLq3YjF9IrgWY51mD2RCHU2b7JF75Tk"
 
 genai.configure(api_key=api_key)
+
+# !!! هنا التحديث: استخدام أحدث وأسرع موديل !!!
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 # --- 2. نظام قواعد البيانات ---
@@ -77,7 +79,6 @@ def save_exam_result(email, score):
 
 def add_system_announcement(type, title, message):
     db = load_json(SYSTEM_DB_FILE)
-    # تم تقسيم السطر الطويل لتجنب الأخطاء
     new_item = {
         "date": str(datetime.date.today()),
         "title": title,
@@ -191,11 +192,11 @@ def main_app():
             st.success("تم الحفظ!")
 
     elif selected == "مذاكرة":
-        st.title("🤖 المذاكرة الذكية")
+        st.title("🤖 المذاكرة الذكية (Gemini 1.5 Flash)")
         if "file_content" in st.session_state:
             prompt = st.chat_input("اسألني...")
             if prompt:
-                res = model.generate_content(f"Context: {st.session_state.file_content[:5000]}\nQ: {prompt}")
+                res = model.generate_content(f"Context: {st.session_state.file_content[:10000]}\nQ: {prompt}")
                 st.write(res.text)
         else:
             st.warning("ارفع ملفات أولاً!")
@@ -208,14 +209,15 @@ def main_app():
                 with st.spinner("جاري تأليف الأسئلة..."):
                     try:
                         prompt = """
-                        Create 3 MCQ questions from the text.
-                        Return JSON format:
+                        Create 3 MCQ questions from the text below.
+                        Output must be valid JSON only.
+                        Format:
                         [
                             {"question": "Q1", "options": ["A", "B", "C"], "answer": "A"},
                             {"question": "Q2", "options": ["X", "Y", "Z"], "answer": "X"}
                         ]
                         """
-                        full_prompt = f"{prompt}\nText: {st.session_state.file_content[:3000]}"
+                        full_prompt = f"{prompt}\nText: {st.session_state.file_content[:5000]}"
                         res = model.generate_content(full_prompt)
                         clean_json = res.text.replace("```json", "").replace("```", "").strip()
                         st.session_state.quiz = json.loads(clean_json)
