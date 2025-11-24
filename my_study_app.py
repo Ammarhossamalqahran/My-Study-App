@@ -33,10 +33,10 @@ except Exception as e:
 # --- 3. قواعد البيانات ---
 USER_DB = "users_db.json"
 SYSTEM_DB = "system_db.json"
-if not os.path.exists("user_data"): os.makedirs("user_data")
-if not os.path.exists(USER_DB): with open(USER_DB, 'w') as f: json.dump({}, f)
-if not os.path.exists(SYSTEM_DB): with open(SYSTEM_DB, 'w') as f: json.dump({"notifications": [], "events": []}, f)
 
+if not os.path.exists("user_data"): os.makedirs("user_data")
+if not os.path.exists(USER_DB): with open(USER_DB, 'w') as f: json.dump({}, f) # ❌❌ الخطأ كان هنا ❌❌
+if not os.path.exists(SYSTEM_DB): with open(SYSTEM_DB, 'w') as f: json.dump({"notifications": [], "events": []}, f) # ❌❌ وهنا ❌❌
 # (الدوال الأساسية)
 def load_json(filename):
     try:
@@ -209,3 +209,4 @@ def app_controller():
 
 if __name__ == "__main__":
     app_controller()
+
