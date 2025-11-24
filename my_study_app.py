@@ -4,28 +4,33 @@ import json
 import os
 import datetime
 import pandas as pd
+from gtts import gTTS
+import io
 import PyPDF2
 import docx
 from streamlit_option_menu import option_menu
 
 # --- 1. الإعدادات الأساسية ---
-st.set_page_config(page_title="EduMinds - المتكامل", page_icon="🎓", layout="wide")
+st.set_page_config(page_title="منصة عمار التعليمية", page_icon="🎓", layout="wide")
 
-ADMIN_USERS = ["amarhossam0000", "mariamebrahim8888"] 
+ADMIN_USERS = ["amarhossam0000", "mariamebrahim8888"]
 
-# --- 2. إعداد المفتاح والموديل (آمن) ---
-# --- 2. إعداد المفتاح والموديل (آمن 100%) ---
+# --- 2. إعداد المفتاح والموديل (النسخة الثابتة) ---
 try:
-    # يجب أن يكون المفتاح في الخزنة الآن
-    api_key = st.secrets["GOOGLE_API_KEY"] 
+    # 💥 التصحيح النهائي: الاعتماد كلياً على st.secrets
+    # نستخدم st.secrets مباشرة لتجنب خطأ NameError أو NotFound
+    api_key = st.secrets.get("GOOGLE_API_KEY") 
     
+    if not api_key:
+        st.error("⚠️ لم يتم العثور على مفتاح API. الرجاء وضعه في Secrets Cloud.")
+        st.stop()
+        
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('models/gemini-pro') 
+    model = genai.GenerativeModel('gemini-pro') 
     st.session_state.gemini_ready = True
 except Exception as e:
-    # لو فشل، توقف واطلب من المستخدم وضع المفتاح في الخزنة
-    st.error("⚠️ فشل الاتصال بخدمة Gemini. تأكد أن المفتاح الجديد موجود في الخزنة (Secrets) باسم GOOGLE_API_KEY.")
-    st.stop()
+    st.error(f"⚠️ فشل الاتصال بخدمة Gemini. تأكد من إعداد المفتاح.")
+    st.stop() 
 
 # --- 3. قواعد البيانات ---
 USER_DB = "users_db.json"
@@ -36,7 +41,8 @@ if not os.path.exists(USER_DB):
 if not os.path.exists(SYSTEM_DB): 
     with open(SYSTEM_DB, 'w') as f: json.dump({"notifications": [], "events": []}, f)
 
-# (الدوال الأساسية)
+# (باقي الدوال: load_json, save_json, get_user, save_score, add_notification... كما هي)
+# (تم حذفها هنا للاختصار ولكن يجب أن تكون موجودة في ملفك الكامل)
 def load_json(filename):
     try:
         with open(filename, 'r') as f: return json.load(f)
@@ -67,12 +73,16 @@ def add_notification(msg):
     save_json(SYSTEM_DB, db)
 
 def read_file_content(uploaded_file):
-    # (تم اختصار الكود لتجنب التكرار)
     text = ""
     try:
         if uploaded_file.name.endswith('.pdf'):
             pdf = PyPDF2.PdfReader(uploaded_file)
             text += "".join([p.extract_text() or "" for p in pdf.pages])
+        elif uploaded_file.name.endswith('.docx'):
+            doc = docx.Document(uploaded_file)
+            text += "\n".join([p.text for p in doc.paragraphs])
+        elif uploaded_file.name.endswith('.txt'):
+            text = uploaded_file.read().decode('utf-8')
         return text
     except Exception as e:
         return ""
@@ -87,12 +97,13 @@ def quiz_mode():
 
 def summary_mode():
     st.title("🟣 ملخصات وشرح")
-    uploaded_file = st.file_uploader("ارفع الملف المطلوب تلخيصه:", type=['pdf', 'docx', 'txt'])
+    uploaded_file = st.f.uploader("ارفع الملف المطلوب تلخيصه:", type=['pdf', 'docx', 'txt'])
 
     if uploaded_file:
         content = read_file_content(uploaded_file)
         if st.button("تلخيص الآن"):
             with st.spinner("جاري تلخيص المحتوى..."):
+                # الكود اللي كان بيضرب Error هنا (تم إصلاحه بالتأكد من المفتاح)
                 res = model.generate_content(f"لخص هذا النص التعليمي في نقاط بسيطة:\n{content[:10000]}")
                 st.subheader("الملخص")
                 st.write(res.text)
@@ -122,45 +133,17 @@ def admin_mode():
     if st.button("نشر إشعار عام"):
         add_notification(msg)
         st.success("تم النشر بنجاح!")
-
-def dashboard_page():
-    st.title("🏠 EduMinds | اختر ما تود فعله")
-    st.markdown("---")
     
-    col1, col2, col3, col4 = st.columns(4)
-
-    def display_tile(col, title, emoji, page_name):
-        button_clicked = col.button(f"### {emoji} {title}", key=title, use_container_width=True)
-        if button_clicked:
-            st.session_state.action = page_name
-            st.rerun()
-    
-    # 📌 المربعات الملونة المطلوبة (التي كانت مفقودة)
-    display_tile(col1, "اختبارات وامتحانات", "🔴", "QUIZ")
-    display_tile(col2, "سؤال وجواب مباشر", "🔵", "CHAT")
-    display_tile(col3, "تلخيص وشرح المواد", "🟣", "SUMMARY")
-    display_tile(col4, "سجل الدرجات والتطور", "🟠", "GRADES")
-
-    col5, col6, col7, col8 = st.columns(4)
-    display_tile(col5, "إدارة المهام والتذكيرات", "🟦", "TASKS")
-    display_tile(col6, "ألعاب تعلم اللغة", "🟢", "GAMES")
-    
-    # زر لوحة الأدمن
-    if st.session_state.username in ADMIN_USERS:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.button("🛡️ لوحة الأدمن", key="admin_dash", on_click=lambda: st.session_state.update(action="ADMIN"))
-
 # --- 5. التحكم الرئيسي (Controller) ---
 
 def app_controller():
-    # تهيئة المتغيرات
     if "user_email" not in st.session_state: st.session_state.user_email = None
     if "username" not in st.session_state: st.session_state.username = None
     if "action" not in st.session_state: st.session_state.action = "DASHBOARD"
 
     # 1. صفحة الدخول
     if not st.session_state.username:
-        # (كود صفحة الدخول)
+        # (كود الدخول)
         st.markdown("<h1 style='text-align:center; color:#764abc;'>🔐 تسجيل دخول سريع</h1>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -171,7 +154,7 @@ def app_controller():
                     if not username: st.error("الرجاء إدخال اسم."); st.stop()
                     get_user(username) 
                     st.session_state.username = username
-                    st.session_state.action = "DASHBOARD" 
+                    st.session_state.action = "DASHBOARD"
                     st.rerun()
         return
 
@@ -181,15 +164,12 @@ def app_controller():
         st.write(f"أهلاً، **{user['name']}**")
         st.markdown("---")
         
-        # 📌 حقوق الملكية والتواصل
         st.subheader("💡 دعم وتواصل")
         st.info("📩 **بريد الدعم:** support@eduminds.com")
-        st.info("📞 **تواصل معنا:** 011xxxxxxx")
         st.info("❓ **حل المشكلات:** اضغط هنا")
-        st.markdown("---")
-        st.markdown("##### جميع الحقوق محفوظة © 2025")
         
-        if st.button("العودة للرئيسية"):
+        st.markdown("---")
+        if st.button("العودة للرئيسية (لوحة التحكم)"):
             st.session_state.action = "DASHBOARD"
             st.rerun()
         if st.button("تسجيل خروج"):
@@ -200,23 +180,37 @@ def app_controller():
     action = st.session_state.get("action", "DASHBOARD")
     
     if action == "DASHBOARD":
-        dashboard_page()
-    elif action == "QUIZ":
-        quiz_mode()
+        st.title("🏠 EduMinds | اختر ما تود فعله")
+        # (كود عرض المربعات الملونة)
+        col1, col2, col3, col4 = st.columns(4)
+        def display_tile(col, title, emoji, page_name):
+            if col.button(f"### {emoji} {title}", key=title, use_container_width=True):
+                st.session_state.action = page_name
+                st.rerun()
+        
+        display_tile(col1, "اختبارات وكويزات", "🔴", "QUIZ")
+        display_tile(col2, "سؤال وجواب مباشر", "🔵", "CHAT")
+        display_tile(col3, "تلخيص وشرح المواد", "🟣", "SUMMARY")
+        display_tile(col4, "سجل الدرجات والتطور", "🟠", "GRADES")
+        
+        col5, col6, col7, col8 = st.columns(4)
+        display_tile(col5, "إدارة المهام والتذكيرات", "🟦", "TASKS")
+        display_tile(col6, "ألعاب تعلم اللغة", "🟢", "GAMES")
+
+        if st.session_state.username in ADMIN_USERS:
+            st.button("🛡️ لوحة الأدمن", key="admin_dash", on_click=lambda: st.session_state.update(action="ADMIN"))
+
     elif action == "SUMMARY":
         summary_mode()
+    elif action == "QUIZ":
+        quiz_mode()
     elif action == "CHAT":
         chat_mode()
     elif action == "GRADES":
         grades_mode(st.session_state.username)
     elif action == "ADMIN":
         admin_mode()
-    elif action == "TASKS":
-        st.title("🟦 إدارة المهام والتذكيرات")
-    elif action == "GAMES":
-        st.title("🟢 ألعاب تعلم اللغة")
+    # (باقي الحالات)
 
 if __name__ == "__main__":
     app_controller()
-
-
