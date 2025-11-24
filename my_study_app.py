@@ -72,7 +72,8 @@ def save_score(username, score):
 # --- 4. واجهة تسجيل الدخول الجديدة ---
 
 if "username" not in st.session_state: st.session_state.username = None
-if "action" not in st.session_state: st.session_state.action = None
+if "action" not in st.session_state:
+    st.session_state.action = "DASHBOARD"
 
 def login_page():
     st.markdown("<h1 style='text-align:center; color:#764abc;'>🔐 تسجيل دخول سريع</h1>", unsafe_allow_html=True)
@@ -142,5 +143,6 @@ def app_controller():
 
 if __name__ == "__main__":
     app_controller()
+
 
 
