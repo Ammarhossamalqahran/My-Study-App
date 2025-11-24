@@ -97,7 +97,7 @@ def quiz_mode():
 
 def summary_mode():
     st.title("🟣 ملخصات وشرح")
-    uploaded_file = st.f.uploader("ارفع الملف المطلوب تلخيصه:", type=['pdf', 'docx', 'txt'])
+    uploaded_file = st.file_uploader("ارفع الملف المطلوب تلخيصه:", type=['pdf', 'docx', 'txt'])
 
     if uploaded_file:
         content = read_file_content(uploaded_file)
@@ -214,3 +214,4 @@ def app_controller():
 
 if __name__ == "__main__":
     app_controller()
+
