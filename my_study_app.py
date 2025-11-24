@@ -13,23 +13,15 @@ from streamlit_option_menu import option_menu
 # --- 1. إعداد الصفحة ---
 st.set_page_config(page_title="منصة عمار التعليمية", page_icon="🎓", layout="wide")
 
-# --- 2. إعداد المفتاح (بتاعك اللي انت بعته) ---
-# الكود ده ذكي: لو لقى المفتاح في "خزنة السيرفر" بيستخدمه
-# --- إعداد المفتاح الآمن ---
-# السطر ده بيقول للبرنامج: روح هات المفتاح من خزنة الأسرار، متكتبوش هنا
-api_key = st.secrets["GOOGLE_API_KEY"]
-
-genai.configure(api_key=api_key)
-else:
-    api_key = "AIzaSyCq9dJgYood8SQ9e2nPLDtxa2hc8XFJrWU" # مفتاحك اهو
-
-genai.configure(api_key=api_key)
-
-# استخدام موديل سريع وحديث
+# --- 2. إعداد المفتاح من الخزنة ---
 try:
+    api_key = st.secrets["GOOGLE_API_KEY"]
+    genai.configure(api_key=api_key)
+    # استخدام أحدث موديل
     model = genai.GenerativeModel('gemini-1.5-flash')
-except:
-    model = genai.GenerativeModel('gemini-pro')
+except Exception as e:
+    st.error("⚠️ في مشكلة في قراءة مفتاح API من الخزنة (Secrets).")
+    st.stop()
 
 # --- 3. قواعد البيانات ---
 if not os.path.exists("user_data"): os.makedirs("user_data")
@@ -43,7 +35,10 @@ if not os.path.exists(SYSTEM_DB):
 
 # --- 4. الدوال ---
 def get_user(email):
-    with open(USER_DB, 'r') as f: db = json.load(f)
+    try:
+        with open(USER_DB, 'r') as f: db = json.load(f)
+    except: db = {}
+    
     if email not in db:
         db[email] = {"name": email.split('@')[0], "history": []}
         with open(USER_DB, 'w') as f: json.dump(db, f)
@@ -101,6 +96,7 @@ def main():
         if "content" in st.session_state:
             q = st.chat_input("اسألني أي سؤال في المنهج...")
             if q:
+                # طلب الرد من جيميناي
                 res = model.generate_content(f"Context: {st.session_state.content[:15000]}\nQuestion: {q}\nAnswer in Arabic.")
                 st.write(res.text)
 
@@ -139,4 +135,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
