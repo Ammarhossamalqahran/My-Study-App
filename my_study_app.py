@@ -35,6 +35,12 @@ if not os.path.exists(USER_DB):
     with open(USER_DB, 'w') as f: json.dump({}, f)
 if not os.path.exists(SYSTEM_DB): 
     with open(SYSTEM_DB, 'w') as f: json.dump({"notifications": [], "events": []}, f)
+        # --- تهيئة متغيرات الجلسة (CRUCIAL FIX) ---
+if "username" not in st.session_state: 
+    st.session_state.username = None
+if "action" not in st.session_state: 
+    st.session_state.action = "DASHBOARD"
+# ------------------------------------------
 
 # (دوال الـ JSON والحفظ كما هي)
 def load_json(filename):
@@ -193,4 +199,5 @@ def app_controller():
 
 if __name__ == "__main__":
     app_controller()
+
 
