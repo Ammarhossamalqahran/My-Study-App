@@ -10,299 +10,130 @@ import PyPDF2
 import docx
 from streamlit_option_menu import option_menu
 
-# --- 1. الإعدادات الأساسية ---
-st.set_page_config(page_title="EduMinds - منصتي", page_icon="🎓", layout="wide")
+# --- 1. إعداد الصفحة ---
+st.set_page_config(page_title="منصة عمار التعليمية", page_icon="🎓", layout="wide")
 
-# قائمة الأدمن
-ADMIN_EMAILS = ["amarhossam0000@gmail.com", "mariamebrahim8888@gmail.com"]
-
-# مفتاح الـ API
+# --- 2. إعداد المفتاح (بتاعك اللي انت بعته) ---
+# الكود ده ذكي: لو لقى المفتاح في "خزنة السيرفر" بيستخدمه
+# لو ملقاش (يعني انت على جهازك) بيستخدم المفتاح اللي انت بعتهولي
 if "GOOGLE_API_KEY" in st.secrets:
     api_key = st.secrets["GOOGLE_API_KEY"]
 else:
-    api_key = "AIzaSyDDvLq3YjF9IrgWY51mD2RCHU2b7JF75Tk"
+    api_key = "AIzaSyCq9dJgYood8SQ9e2nPLDtxa2hc8XFJrWU" # مفتاحك اهو
 
 genai.configure(api_key=api_key)
 
-# استخدام النسخة المستقرة عشان تشتغل على السيرفر
-model = genai.GenerativeModel('gemini-pro')
+# استخدام موديل سريع وحديث
+try:
+    model = genai.GenerativeModel('gemini-1.5-flash')
+except:
+    model = genai.GenerativeModel('gemini-pro')
 
-# --- 2. نظام قواعد البيانات ---
-USER_DB_FILE = "users_db.json"
-SYSTEM_DB_FILE = "system_db.json"
-USER_DATA_DIR = "user_data"
+# --- 3. قواعد البيانات ---
+if not os.path.exists("user_data"): os.makedirs("user_data")
+USER_DB = "users_db.json"
+SYSTEM_DB = "system_db.json"
 
-if not os.path.exists(USER_DATA_DIR):
-    os.makedirs(USER_DATA_DIR)
+if not os.path.exists(USER_DB): 
+    with open(USER_DB, 'w') as f: json.dump({}, f)
+if not os.path.exists(SYSTEM_DB): 
+    with open(SYSTEM_DB, 'w') as f: json.dump({"notifications": []}, f)
 
-# إنشاء الملفات لو مش موجودة
-if not os.path.exists(USER_DB_FILE):
-    with open(USER_DB_FILE, 'w') as f:
-        json.dump({}, f)
-
-if not os.path.exists(SYSTEM_DB_FILE):
-    with open(SYSTEM_DB_FILE, 'w') as f:
-        json.dump({"notifications": [], "events": []}, f)
-
-# --- دوال التعامل مع الداتا ---
-def load_json(filename):
-    try:
-        with open(filename, 'r') as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_json(filename, data):
-    with open(filename, 'w') as f:
-        json.dump(data, f, indent=4)
-
+# --- 4. الدوال ---
 def get_user(email):
-    db = load_json(USER_DB_FILE)
+    with open(USER_DB, 'r') as f: db = json.load(f)
     if email not in db:
-        db[email] = {
-            "name": email.split('@')[0],
-            "joined": str(datetime.date.today()),
-            "exam_history": [],
-            "avatar_path": None
-        }
-        save_json(USER_DB_FILE, db)
+        db[email] = {"name": email.split('@')[0], "history": []}
+        with open(USER_DB, 'w') as f: json.dump(db, f)
     return db[email]
 
-def save_exam_result(email, score):
-    db = load_json(USER_DB_FILE)
-    record = {
-        "date": str(datetime.date.today()),
-        "score": score
-    }
-    db[email]["exam_history"].append(record)
-    save_json(USER_DB_FILE, db)
+def save_score(email, score):
+    with open(USER_DB, 'r') as f: db = json.load(f)
+    db[email]["history"].append({"date": str(datetime.date.today()), "score": score})
+    with open(USER_DB, 'w') as f: json.dump(db, f)
 
-def add_system_announcement(type, title, message):
-    db = load_json(SYSTEM_DB_FILE)
-    new_item = {
-        "date": str(datetime.date.today()),
-        "title": title,
-        "message": message
-    }
-    
-    if type == "notification":
-        db["notifications"].insert(0, new_item)
-    else:
-        db["events"].insert(0, new_item)
-    save_json(SYSTEM_DB_FILE, db)
+# --- 5. التطبيق الرئيسي ---
+if "email" not in st.session_state: st.session_state.email = None
 
-def clear_announcements(type):
-    db = load_json(SYSTEM_DB_FILE)
-    db[type] = []
-    save_json(SYSTEM_DB_FILE, db)
-
-# --- 3. واجهة تسجيل الدخول ---
-if "user_email" not in st.session_state:
-    st.session_state.user_email = None
-
-def login_page():
-    st.markdown("<h1 style='text-align: center; color: #764abc;'>🔐 EduMinds Login</h1>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        with st.form("login"):
-            email = st.text_input("📧 البريد الإلكتروني:")
-            if st.form_submit_button("دخول") and "@" in email:
-                st.session_state.user_email = email.lower().strip()
+def main():
+    # صفحة الدخول
+    if not st.session_state.email:
+        st.markdown("<h1 style='text-align:center; color:#764abc;'>🔐 تسجيل الدخول</h1>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            email = st.text_input("البريد الإلكتروني:")
+            if st.button("دخول") and "@" in email:
+                st.session_state.email = email.lower().strip()
                 st.rerun()
+        return
 
-# --- 4. التطبيق الرئيسي ---
-def main_app():
-    email = st.session_state.user_email
-    user = get_user(email)
-    is_admin = email in ADMIN_EMAILS
+    # التطبيق بعد الدخول
+    user = get_user(st.session_state.email)
     
-    system_data = load_json(SYSTEM_DB_FILE)
-
-    # القائمة الجانبية
     with st.sidebar:
-        if user.get("avatar_path") and os.path.exists(user["avatar_path"]):
-            st.image(user["avatar_path"], width=100)
-        else:
-            st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=100)
-        
-        st.write(f"أهلاً، **{user['name']}**")
-        
-        if system_data.get("notifications"):
-            latest = system_data["notifications"][0]
-            st.info(f"🔔 {latest['message']}")
-
-        menu = ["الرئيسية", "الفعاليات", "المكتبة", "مذاكرة", "امتحانات", "الإعدادات"]
-        icons = ['house', 'trophy', 'folder', 'book', 'card-checklist', 'gear']
-        
-        if is_admin:
-            menu.append("لوحة الأدمن")
-            icons.append("shield-lock")
-            
-        selected = option_menu("القائمة", menu, icons=icons, styles={"nav-link-selected": {"background-color": "#764abc"}})
-        
+        st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=80)
+        st.write(f"أهلاً **{user['name']}**")
+        selected = option_menu("القائمة", ["مذاكرة", "امتحانات", "حسابي"], icons=['book', 'pencil', 'person'])
         if st.button("خروج"):
-            st.session_state.user_email = None
+            st.session_state.email = None
             st.rerun()
 
-    # الصفحات
-    if selected == "الرئيسية":
-        st.title(f"📊 أهلاً بك في منصتك")
-        if system_data.get("notifications"):
-            st.subheader("🔔 آخر التنبيهات")
-            for note in system_data["notifications"][:3]:
-                st.warning(f"**{note['date']}**: {note['message']}")
-
-        exams = user['exam_history']
-        col1, col2, col3 = st.columns(3)
-        col1.metric("عدد الامتحانات", len(exams))
-        avg = 0
-        if exams:
-            avg = sum([x['score'] for x in exams]) / len(exams)
-        col2.metric("المستوى العام", f"{avg:.1f}%")
-        col3.metric("تاريخ الانضمام", user['joined'])
+    if selected == "مذاكرة":
+        st.title("🤖 المذاكرة الذكية")
+        files = st.file_uploader("ارفع ملفاتك (PDF/Word)", accept_multiple_files=True)
         
-        if len(exams) > 0:
-            st.subheader("📈 منحنى التطور")
-            df = pd.DataFrame(exams)
-            st.line_chart(df, x="date", y="score")
-
-    elif selected == "الفعاليات":
-        st.title("🏆 الفعاليات والمسابقات")
-        if not system_data.get("events"):
-            st.info("لا توجد فعاليات نشطة حالياً.")
-        else:
-            for event in system_data["events"]:
-                with st.expander(f"📌 {event['title']} ({event['date']})", expanded=True):
-                    st.write(event['message'])
-                    if st.button(f"شارك في {event['title']}", key=event['title']):
-                        st.balloons()
-                        st.success("تم تسجيل اهتمامك!")
-
-    elif selected == "المكتبة":
-        st.title("📂 ملفاتك")
-        files = st.file_uploader("ارفع ملفات (PDF/Word)", accept_multiple_files=True)
-        if files and st.button("حفظ وتحليل"):
+        if files and st.button("تحليل وبدء المذاكرة"):
             text = ""
             for f in files:
                 try:
                     if f.name.endswith('.pdf'):
-                        reader = PyPDF2.PdfReader(f)
-                        text += "".join([p.extract_text() or "" for p in reader.pages])
+                        pdf = PyPDF2.PdfReader(f)
+                        text += "".join([p.extract_text() for p in pdf.pages])
                     elif f.name.endswith('.docx'):
                         doc = docx.Document(f)
                         text += "\n".join([p.text for p in doc.paragraphs])
-                except:
-                    pass
-            st.session_state.file_content = text
-            st.success("تم الحفظ!")
+                except: pass
+            st.session_state.content = text
+            st.success("تم قراءة الملفات بنجاح!")
 
-    elif selected == "مذاكرة":
-        st.title("🤖 المذاكرة الذكية")
-        if "file_content" in st.session_state:
-            prompt = st.chat_input("اسألني...")
-            if prompt:
-                res = model.generate_content(f"Context: {st.session_state.file_content[:5000]}\nQ: {prompt}")
+        if "content" in st.session_state:
+            q = st.chat_input("اسألني أي سؤال في المنهج...")
+            if q:
+                res = model.generate_content(f"Context: {st.session_state.content[:15000]}\nQuestion: {q}\nAnswer in Arabic.")
                 st.write(res.text)
-        else:
-            st.warning("ارفع ملفات أولاً!")
 
     elif selected == "امتحانات":
-        st.title("📝 اختبر نفسك")
-        
-        if st.button("إنشاء امتحان جديد"):
-            if "file_content" in st.session_state:
-                with st.spinner("جاري تأليف الأسئلة..."):
-                    try:
-                        # طلب بسيط ومستقر
-                        prompt = """
-                        Create 3 MCQ questions from the text below.
-                        Output must be valid JSON only.
-                        Format:
-                        [
-                            {"question": "Q1", "options": ["A", "B", "C"], "answer": "A"},
-                            {"question": "Q2", "options": ["X", "Y", "Z"], "answer": "X"}
-                        ]
-                        """
-                        full_prompt = f"{prompt}\nText: {st.session_state.file_content[:3000]}"
-                        res = model.generate_content(full_prompt)
-                        clean_json = res.text.replace("```json", "").replace("```", "").strip()
-                        st.session_state.quiz = json.loads(clean_json)
-                        st.rerun()
-                    except:
-                        st.error("حدث خطأ أثناء توليد الأسئلة، حاول مرة أخرى.")
-            else:
-                st.error("الرجاء رفع ملفات من المكتبة أولاً!")
+        st.title("📝 امتحان فوري")
+        if st.button("أنشئ امتحان") and "content" in st.session_state:
+            try:
+                prompt = """Create 3 MCQ questions JSON format: [{"question":"..","options":[".."],"answer":".."}]"""
+                res = model.generate_content(f"{prompt}\nContext: {st.session_state.content[:5000]}")
+                st.session_state.quiz = json.loads(res.text.replace("```json","").replace("```","").strip())
+                st.rerun()
+            except: st.error("حاول مرة أخرى")
 
         if "quiz" in st.session_state:
-            st.divider()
-            user_answers = {}
+            score = 0
             for i, q in enumerate(st.session_state.quiz):
-                st.subheader(f"س{i+1}: {q['question']}")
-                user_answers[i] = st.radio("الإجابة:", q['options'], key=i)
+                st.write(f"**س{i+1}: {q['question']}**")
+                ans = st.radio("الإجابة:", q['options'], key=i)
+                if ans == q['answer']: score += 1
             
-            st.markdown("---")
-            
-            if st.button("تسليم وإنهاء الامتحان"):
-                score = 0
-                for i, q in enumerate(st.session_state.quiz):
-                    if user_answers[i] == q['answer']:
-                        score += 1
-                
-                final_score = (score / len(st.session_state.quiz)) * 100
+            st.write("---")
+            if st.button("تسليم الامتحان"):
+                final = (score/len(st.session_state.quiz))*100
                 st.balloons()
-                st.success(f"نتيجتك: {final_score:.1f}%")
-                
-                save_exam_result(email, final_score)
-                st.success("✅ تم حفظ النتيجة في سجلك!")
+                st.success(f"النتيجة: {final:.1f}%")
+                save_score(st.session_state.email, final)
 
-    elif selected == "لوحة الأدمن":
-        st.title("👮‍♂️ مركز القيادة")
-        
-        tab1, tab2 = st.tabs(["📢 نشر إشعارات", "👥 إدارة المستخدمين"])
-        
-        with tab1:
-            st.header("إرسال تحديثات")
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader("🔔 إرسال إشعار")
-                note_msg = st.text_area("نص الإشعار:")
-                if st.button("إرسال للكل"):
-                    add_system_announcement("notification", "تنبيه", note_msg)
-                    st.success("تم!")
-                
-                if st.button("مسح الإشعارات"):
-                    clear_announcements("notifications")
-                    st.warning("تم المسح.")
+    elif selected == "حسابي":
+        st.title("📊 مستواك الدراسي")
+        if user['history']:
+            df = pd.DataFrame(user['history'])
+            st.line_chart(df, x='date', y='score')
+            st.write(df)
+        else:
+            st.info("لسه مفيش امتحانات، شد حيلك!")
 
-            with col2:
-                st.subheader("🏆 إنشاء فعالية")
-                event_title = st.text_input("عنوان الفعالية:")
-                event_msg = st.text_area("تفاصيل الفعالية:")
-                if st.button("نشر الفعالية"):
-                    add_system_announcement("event", event_title, event_msg)
-                    st.success("تم!")
-                
-                if st.button("مسح الفعاليات"):
-                    clear_announcements("events")
-                    st.warning("تم المسح.")
-
-        with tab2:
-            st.header("إحصائيات المستخدمين")
-            db = load_json(USER_DB_FILE)
-            
-            data_rows = []
-            for e, d in db.items():
-                data_rows.append({
-                    "Email": e,
-                    "Name": d['name'],
-                    "Exams": len(d['exam_history'])
-                })
-            
-            st.dataframe(pd.DataFrame(data_rows), use_container_width=True)
-
-# تشغيل التطبيق
-if st.session_state.user_email:
-    main_app()
-else:
-    login_page()
+if __name__ == "__main__":
+    main()
