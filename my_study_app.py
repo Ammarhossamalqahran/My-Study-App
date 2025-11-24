@@ -16,19 +16,14 @@ st.set_page_config(page_title="منصة عمار التعليمية", page_icon=
 # قائمة الأدمن
 ADMIN_EMAILS = ["amarhossam0000@gmail.com", "mariamebrahim8888@gmail.com"]
 
-# --- 2. إعداد المفتاح (آمن 100%) ---
+# --- 2. إعداد المفتاح ---
 try:
-    # الكود هنا بيجيب المفتاح من الخزنة بس
     api_key = st.secrets["GOOGLE_API_KEY"]
     genai.configure(api_key=api_key)
-    
-    # استخدام الموديل المستقر
     model = genai.GenerativeModel('gemini-pro')
-
 except Exception as e:
-    # رسالة لو نسيت تحط المفتاح في الخزنة
     st.error("⚠️ لم يتم العثور على مفتاح API في الخزنة (Secrets).")
-    st.stop() # يوقف البرنامج عشان ميكملش غلط
+    st.stop() 
 
 # --- 3. قواعد البيانات ---
 if not os.path.exists("user_data"): os.makedirs("user_data")
@@ -51,7 +46,6 @@ def save_json(filename, data):
 
 def get_user(email):
     db = load_json(USER_DB)
-    
     if email not in db:
         db[email] = {
             "name": email.split('@')[0],
@@ -60,12 +54,10 @@ def get_user(email):
         }
         save_json(USER_DB, db)
     
-    # تصليح الخطأ القديم (لو موجود)
+    # تصليح الخطأ القديم (KeyError)
     if "history" not in db[email]:
-        if "exam_history" in db[email]:
-            db[email]["history"] = db[email]["exam_history"]
-        else:
-            db[email]["history"] = []
+        if "exam_history" in db[email]: db[email]["history"] = db[email]["exam_history"]
+        else: db[email]["history"] = []
         save_json(USER_DB, db)
     
     return db[email]
@@ -85,7 +77,6 @@ def add_notification(msg):
 if "email" not in st.session_state: st.session_state.email = None
 
 def main():
-    # --- صفحة الدخول ---
     if not st.session_state.email:
         st.markdown("<h1 style='text-align:center; color:#764abc;'>🔐 EduMinds Login</h1>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1,2,1])
@@ -97,7 +88,6 @@ def main():
                     st.rerun()
         return
 
-    # --- بعد الدخول ---
     user_email = st.session_state.email
     user = get_user(user_email)
     is_admin = user_email in ADMIN_EMAILS
@@ -135,6 +125,11 @@ def main():
         if user['history']:
             avg = sum([x['score'] for x in user['history']]) / len(user['history'])
             col2.metric("مستواك العام", f"{avg:.1f}%")
+        
+        if user['history']:
+            st.subheader("📈 منحنى التطور")
+            df = pd.DataFrame(user['history'])
+            st.line_chart(df, x='date', y='score')
 
         if sys_data.get("notifications"):
             st.subheader("📢 آخر الأخبار")
@@ -215,8 +210,28 @@ def main():
                 st.success("تم النشر!")
         
         with tab2:
+            st.header("إحصائيات المستخدمين")
             db = load_json(USER_DB)
-            st.json(db)
+            
+            # --- التصحيح هنا: تحويل JSON لجدول منظم ---
+            users_data_list = []
+            for email, data in db.items():
+                history = data.get('history', [])
+                avg_score = f"{sum([x['score'] for x in history]) / len(history):.1f}%" if history else "جديد"
+                
+                users_data_list.append({
+                    "الإيميل": email,
+                    "الاسم": data['name'],
+                    "الامتحانات": len(history),
+                    "المستوى": avg_score
+                })
+
+            if users_data_list:
+                df = pd.DataFrame(users_data_list)
+                st.dataframe(df, use_container_width=True)
+            else:
+                st.info("لا يوجد مستخدمين مسجلين بعد.")
+
 
 if __name__ == "__main__":
     main()
