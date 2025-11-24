@@ -15,9 +15,11 @@ st.set_page_config(page_title="منصة عمار التعليمية", page_icon=
 
 # --- 2. إعداد المفتاح (بتاعك اللي انت بعته) ---
 # الكود ده ذكي: لو لقى المفتاح في "خزنة السيرفر" بيستخدمه
-# لو ملقاش (يعني انت على جهازك) بيستخدم المفتاح اللي انت بعتهولي
-if "GOOGLE_API_KEY" in st.secrets:
-    api_key = st.secrets["GOOGLE_API_KEY"]
+# --- إعداد المفتاح الآمن ---
+# السطر ده بيقول للبرنامج: روح هات المفتاح من خزنة الأسرار، متكتبوش هنا
+api_key = st.secrets["GOOGLE_API_KEY"]
+
+genai.configure(api_key=api_key)
 else:
     api_key = "AIzaSyCq9dJgYood8SQ9e2nPLDtxa2hc8XFJrWU" # مفتاحك اهو
 
@@ -137,3 +139,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
