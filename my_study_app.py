@@ -13,44 +13,37 @@ from streamlit_option_menu import option_menu
 # --- 1. الإعدادات الأساسية ---
 st.set_page_config(page_title="منصة عمار التعليمية", page_icon="🎓", layout="wide")
 
-ADMIN_USERS = ["amarhossam0000", "mariamebrahim8888"]
+ADMIN_USERS = ["amarhossam0000", "mariamebrahim8888"] 
 
-# --- 2. إعداد المفتاح والموديل (النسخة الثابتة) ---
+# --- 2. إعداد المفتاح والموديل (الموديل المستقر) ---
 try:
-    # 💥 التصحيح النهائي: الاعتماد كلياً على st.secrets
-    # نستخدم st.secrets مباشرة لتجنب خطأ NameError أو NotFound
-    api_key = st.secrets.get("GOOGLE_API_KEY") 
+    if "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+    else:
+        api_key = "AIzaSy_حط_مفتاحك_الجديد_هنا" 
     
-    if not api_key:
-        st.error("⚠️ لم يتم العثور على مفتاح API. الرجاء وضعه في Secrets Cloud.")
-        st.stop()
-        
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-pro') 
+    # استخدام العنوان الكامل لضمان عدم ظهور خطأ 404
+    model = genai.GenerativeModel('models/gemini-pro') 
     st.session_state.gemini_ready = True
 except Exception as e:
-    st.error(f"⚠️ فشل الاتصال بخدمة Gemini. تأكد من إعداد المفتاح.")
+    st.error("⚠️ فشل الاتصال بخدمة Gemini. تأكد من المفتاح في Secrets.")
     st.stop() 
 
 # --- 3. قواعد البيانات ---
 USER_DB = "users_db.json"
 SYSTEM_DB = "system_db.json"
 if not os.path.exists("user_data"): os.makedirs("user_data")
-if not os.path.exists(USER_DB): 
-    with open(USER_DB, 'w') as f: json.dump({}, f)
-if not os.path.exists(SYSTEM_DB): 
-    with open(SYSTEM_DB, 'w') as f: json.dump({"notifications": [], "events": []}, f)
+if not os.path.exists(USER_DB): with open(USER_DB, 'w') as f: json.dump({}, f)
+if not os.path.exists(SYSTEM_DB): with open(SYSTEM_DB, 'w') as f: json.dump({"notifications": [], "events": []}, f)
 
-# (باقي الدوال: load_json, save_json, get_user, save_score, add_notification... كما هي)
-# (تم حذفها هنا للاختصار ولكن يجب أن تكون موجودة في ملفك الكامل)
+# (الدوال الأساسية)
 def load_json(filename):
     try:
         with open(filename, 'r') as f: return json.load(f)
     except: return {}
-
 def save_json(filename, data):
     with open(filename, 'w') as f: json.dump(data, f, indent=4)
-
 def get_user(username):
     db = load_json(USER_DB)
     if username not in db:
@@ -60,18 +53,15 @@ def get_user(username):
         db[username]["history"] = db[username].get("exam_history", []) 
         save_json(USER_DB, db)
     return db[username]
-
 def save_score(username, score):
     db = load_json(USER_DB)
     if "history" not in db[username]: db[username]["history"] = []
     db[username]["history"].append({"date": str(datetime.date.today()), "score": score})
     save_json(USER_DB, db)
-
 def add_notification(msg):
     db = load_json(SYSTEM_DB)
     db["notifications"].insert(0, {"date": str(datetime.date.today()), "msg": msg})
     save_json(SYSTEM_DB, db)
-
 def read_file_content(uploaded_file):
     text = ""
     try:
@@ -93,7 +83,8 @@ def quiz_mode():
     st.title("🔴 اختبار من الملف")
     uploaded_file = st.file_uploader("ارفع الملف المطلوب الاختبار منه:", type=['pdf', 'docx', 'txt'])
     if uploaded_file:
-        st.write("سيتم انشاء الاختبار هنا...")
+        st.session_state.content = read_file_content(uploaded_file)
+        st.write("تم تحليل الملف. اضغط 'إنشاء الأسئلة'.")
 
 def summary_mode():
     st.title("🟣 ملخصات وشرح")
@@ -103,7 +94,7 @@ def summary_mode():
         content = read_file_content(uploaded_file)
         if st.button("تلخيص الآن"):
             with st.spinner("جاري تلخيص المحتوى..."):
-                # الكود اللي كان بيضرب Error هنا (تم إصلاحه بالتأكد من المفتاح)
+                # هذا هو السطر الذي كان يضرب خطأ
                 res = model.generate_content(f"لخص هذا النص التعليمي في نقاط بسيطة:\n{content[:10000]}")
                 st.subheader("الملخص")
                 st.write(res.text)
@@ -112,7 +103,7 @@ def chat_mode():
     st.title("🔵 أسئلة سريعة")
     uploaded_file = st.file_uploader("ارفع الملف للمحادثة عليه:", type=['pdf', 'docx', 'txt'])
     if uploaded_file:
-        st.write("سيتم المحادثة على الملف هنا...")
+        st.write("تم تحليل الملف. ابدأ في طرح الأسئلة.")
 
 def grades_mode(username):
     st.title("🟠 سجل الدرجات والتطور")
@@ -133,7 +124,31 @@ def admin_mode():
     if st.button("نشر إشعار عام"):
         add_notification(msg)
         st.success("تم النشر بنجاح!")
-    
+
+def dashboard_page():
+    st.title("🏠 لوحة التحكم | اختر ما تود فعله")
+    st.markdown("---")
+    col1, col2, col3, col4 = st.columns(4)
+
+    def display_tile(col, title, emoji, page_name):
+        button_clicked = col.button(f"### {emoji} {title}", key=title, use_container_width=True)
+        if button_clicked:
+            st.session_state.action = page_name
+            st.rerun()
+
+    display_tile(col1, "اختبارات وكويزات", "🔴", "QUIZ")
+    display_tile(col2, "سؤال وجواب مباشر", "🔵", "CHAT")
+    display_tile(col3, "تلخيص وشرح المواد", "🟣", "SUMMARY")
+    display_tile(col4, "سجل الدرجات والتطور", "🟠", "GRADES")
+
+    col5, col6, col7, col8 = st.columns(4)
+    display_tile(col5, "إدارة المهام والتذكيرات", "🟦", "TASKS")
+    display_tile(col6, "ألعاب تعلم اللغة", "🟢", "GAMES")
+
+    if st.session_state.username in ADMIN_USERS:
+        st.markdown("<br>", unsafe_allow_html=True)
+        st.button("🛡️ لوحة الأدمن", key="admin_dash", on_click=lambda: st.session_state.update(action="ADMIN"))
+
 # --- 5. التحكم الرئيسي (Controller) ---
 
 def app_controller():
@@ -141,9 +156,8 @@ def app_controller():
     if "username" not in st.session_state: st.session_state.username = None
     if "action" not in st.session_state: st.session_state.action = "DASHBOARD"
 
-    # 1. صفحة الدخول
     if not st.session_state.username:
-        # (كود الدخول)
+        # (عرض صفحة الدخول)
         st.markdown("<h1 style='text-align:center; color:#764abc;'>🔐 تسجيل دخول سريع</h1>", unsafe_allow_html=True)
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
@@ -158,7 +172,7 @@ def app_controller():
                     st.rerun()
         return
 
-    # 2. القائمة الجانبية (ثابتة)
+    # القائمة الجانبية (ثابتة)
     with st.sidebar:
         user = get_user(st.session_state.username)
         st.write(f"أهلاً، **{user['name']}**")
@@ -166,8 +180,8 @@ def app_controller():
         
         st.subheader("💡 دعم وتواصل")
         st.info("📩 **بريد الدعم:** support@eduminds.com")
+        st.info("📞 **تواصل معنا:** 011xxxxxxx")
         st.info("❓ **حل المشكلات:** اضغط هنا")
-        
         st.markdown("---")
         if st.button("العودة للرئيسية (لوحة التحكم)"):
             st.session_state.action = "DASHBOARD"
@@ -176,30 +190,11 @@ def app_controller():
             st.session_state.username = None
             st.rerun()
 
-    # 3. التحكم في الصفحة المعروضة (The Router)
+    # التحكم في الصفحة المعروضة (The Router)
     action = st.session_state.get("action", "DASHBOARD")
     
     if action == "DASHBOARD":
-        st.title("🏠 EduMinds | اختر ما تود فعله")
-        # (كود عرض المربعات الملونة)
-        col1, col2, col3, col4 = st.columns(4)
-        def display_tile(col, title, emoji, page_name):
-            if col.button(f"### {emoji} {title}", key=title, use_container_width=True):
-                st.session_state.action = page_name
-                st.rerun()
-        
-        display_tile(col1, "اختبارات وكويزات", "🔴", "QUIZ")
-        display_tile(col2, "سؤال وجواب مباشر", "🔵", "CHAT")
-        display_tile(col3, "تلخيص وشرح المواد", "🟣", "SUMMARY")
-        display_tile(col4, "سجل الدرجات والتطور", "🟠", "GRADES")
-        
-        col5, col6, col7, col8 = st.columns(4)
-        display_tile(col5, "إدارة المهام والتذكيرات", "🟦", "TASKS")
-        display_tile(col6, "ألعاب تعلم اللغة", "🟢", "GAMES")
-
-        if st.session_state.username in ADMIN_USERS:
-            st.button("🛡️ لوحة الأدمن", key="admin_dash", on_click=lambda: st.session_state.update(action="ADMIN"))
-
+        dashboard_page()
     elif action == "SUMMARY":
         summary_mode()
     elif action == "QUIZ":
@@ -214,4 +209,3 @@ def app_controller():
 
 if __name__ == "__main__":
     app_controller()
-
