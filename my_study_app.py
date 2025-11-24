@@ -9,20 +9,22 @@ import docx
 from streamlit_option_menu import option_menu
 
 # --- 1. الإعدادات الأساسية ---
-st.set_page_config(page_title="EduMinds - المتكامل", page_icon="🧠", layout="wide")
+st.set_page_config(page_title="EduMinds - تسجيل سريع", page_icon="🎓", layout="wide")
 
-ADMIN_EMAILS = ["amarhossam0000@gmail.com", "mariamebrahim8888@gmail.com"]
+# قائمة الأدمن الآن تعتمد على اسم المستخدم
+ADMIN_USERS = ["amarhossam0000", "mariamebrahim8888"] 
 
-# --- 2. إعداد المفتاح من الخزنة (التصحيح هنا) ---
+# --- 2. إعداد المفتاح والموديل (آمن) ---
 try:
-    api_key = st.secrets["GOOGLE_API_KEY"]
+    if "GOOGLE_API_KEY" in st.secrets:
+        api_key = st.secrets["GOOGLE_API_KEY"]
+    else:
+        api_key = "YOUR_API_KEY_HERE" # استخدم المفتاح الاحتياطي هنا إذا كنت تختبر محليًا
+    
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-pro')
-    st.session_state.gemini_ready = True # إضافة حالة للتحقق
+    model = genai.GenerativeModel('models/gemini-pro') 
 except Exception as e:
-    st.session_state.gemini_ready = False
-    # لاحظ المسافات (Tab) قبل كلمة st.error
-    st.error("⚠️ فشل الاتصال بخدمة Gemini. تأكد من مفتاح API في الخزنة (Secrets).")
+    st.error("⚠️ فشل الاتصال بخدمة Gemini. تأكد من المفتاح في Secrets.")
     st.stop()
 
 # --- 3. قواعد البيانات ---
@@ -32,10 +34,8 @@ SYSTEM_DB = "system_db.json"
 if not os.path.exists("user_data"): os.makedirs("user_data")
 if not os.path.exists(USER_DB): 
     with open(USER_DB, 'w') as f: json.dump({}, f)
-if not os.path.exists(SYSTEM_DB): 
-    with open(SYSTEM_DB, 'w') as f: json.dump({"notifications": [], "events": []}, f)
 
-# (دوال الـ JSON والحفظ كما هي لتجنب الأخطاء)
+# (دوال الـ JSON والحفظ كما هي)
 def load_json(filename):
     try:
         with open(filename, 'r') as f: return json.load(f)
@@ -44,152 +44,103 @@ def load_json(filename):
 def save_json(filename, data):
     with open(filename, 'w') as f: json.dump(data, f, indent=4)
 
-def get_user(email):
+def get_user(username):
+    """الآن نستخدم الاسم كمفتاح أساسي"""
     db = load_json(USER_DB)
-    if email not in db:
-        db[email] = {"name": email.split('@')[0], "joined": str(datetime.date.today()), "history": []}
+    
+    if username not in db:
+        db[username] = {
+            "name": username, # الاسم هو المفتاح الآن
+            "joined": str(datetime.date.today()),
+            "history": []
+        }
         save_json(USER_DB, db)
-    if "history" not in db[email]:
-        db[email]["history"] = db[email].get("exam_history", []) 
+    
+    # تصليح الخطأ القديم (KeyError)
+    if "history" not in db[username]:
+        db[username]["history"] = db[username].get("exam_history", []) 
         save_json(USER_DB, db)
-    return db[email]
+    
+    return db[username]
 
-def save_score(email, score):
+def save_score(username, score):
     db = load_json(USER_DB)
-    if "history" not in db[email]: db[email]["history"] = []
-    db[email]["history"].append({"date": str(datetime.date.today()), "score": score})
+    if "history" not in db[username]: db[username]["history"] = []
+    db[username]["history"].append({"date": str(datetime.date.today()), "score": score})
     save_json(USER_DB, db)
 
-def read_file_content(uploaded_file):
-    text = ""
-    try:
-        if uploaded_file.name.endswith('.pdf'):
-            pdf = PyPDF2.PdfReader(uploaded_file)
-            text += "".join([p.extract_text() or "" for p in pdf.pages])
-        elif uploaded_file.name.endswith('.docx'):
-            doc = docx.Document(uploaded_file)
-            text += "\n".join([p.text for p in doc.paragraphs])
-        elif uploaded_file.name.endswith('.txt'):
-            text = uploaded_file.read().decode('utf-8')
-        return text
-    except Exception as e:
-        st.error(f"فشل قراءة الملف: {e}")
-        return ""
+# --- 4. واجهة تسجيل الدخول الجديدة ---
 
-# --- 4. واجهات العمل (Flow Pages) ---
+if "username" not in st.session_state: st.session_state.username = None
+if "action" not in st.session_state: st.session_state.action = None
 
-def quiz_mode():
-    """🔴 مربع الامتحان: يطلب الملف مباشرة"""
-    st.title("🔴 اختبار من الملف")
-    uploaded_file = st.file_uploader("ارفع الملف المطلوب الاختبار منه:", type=['pdf', 'docx', 'txt'])
-    
-    if uploaded_file:
-        # (باقي كود انشاء الاختبار...)
-        st.write("تم رفع الملف. اضغط على زر 'إنشاء الأسئلة' أدناه.")
-
-def summary_mode():
-    """🟣 مربع الملخص: يطلب الملف مباشرة"""
-    st.title("🟣 تلخيص وشرح المواد")
-    uploaded_file = st.file_uploader("ارفع الملف المطلوب تلخيصه:", type=['pdf', 'docx', 'txt'])
-
-    if uploaded_file:
-        # (باقي كود تلخيص الملف...)
-        st.write("تم رفع الملف. اضغط على زر 'تلخيص الآن' أدناه.")
-
-def games_mode():
-    """🟢 مربع الألعاب: لتعلم اللغة الإنجليزية (فكرة جديدة)"""
-    st.title("🟢 ألعاب اللغة الإنجليزية")
-    st.info("هذا القسم قيد الإنشاء: يمكنك هنا ممارسة ألعاب مفردات وقواعد اللغة الإنجليزية بطريقة ممتعة!")
-    st.write("مثال: لعبة 'تخمين الكلمة' أو 'ترتيب الجمل'.")
-
-def grades_mode(user_email):
-    """🟠 مربع الدرجات: يعرض التطور"""
-    st.title("🟠 سجل الدرجات والتطور")
-    user = get_user(user_email)
-    # (كود عرض الرسم البياني والجداول)
-    st.write("سيتم عرض الرسم البياني لتطور أدائك هنا.")
-
-def task_management_mode():
-    """🟦 مربع المهام: إدارة الأفكار والمهام (التركيز الجديد)"""
-    st.title("🟦 إدارة المهام والتذكيرات")
-    st.markdown("### 📝 أضف مهمة جديدة")
-    
-    # نموذج لإضافة مهمة
-    with st.form("new_task_form"):
-        title = st.text_input("عنوان المهمة (إلزامي):")
-        due_date = st.date_input("موعد التسليم:", datetime.date.today())
-        priority = st.selectbox("الأولوية:", ["عالية", "متوسطة", "منخفضة"])
-        
-        if st.form_submit_button("إضافة مهمة"):
-            # (هنا يتم استخدام أداة generic_reminders لو كنا نستخدمها مباشرة)
-            st.success(f"تم إضافة المهمة '{title}' بنجاح!")
-            # يجب أن يتم حفظها في قاعدة بيانات محلية هنا
-
-def dashboard_page():
-    """لوحة التحكم الرئيسية"""
-    st.title("🏠 لوحة التحكم")
-    
-    # عرض المهام اليومية في الأعلى (من باب التذكير)
-    st.markdown("### 📋 مهامك الحالية (بناءً على أولوياتك)")
-    st.warning("هذا الجزء يحتاج لربط بنظام الـ ToDo List الكامل.")
-    st.markdown("---")
-    
-    # المربعات الملونة
-    col1, col2, col3, col4 = st.columns(4)
-
-    def display_tile(col, title, emoji, page_name):
-        button_clicked = col.button(f"{emoji} {title}", key=title, use_container_width=True)
-        if button_clicked:
-            st.session_state.action = page_name
-            st.rerun()
-
-    # إنشاء المربعات الجديدة
-    display_tile(col1, "إدارة المهام والتذكيرات", "🟦", "TASKS") # أزرق: المهام
-    display_tile(col2, "ملخصات وشرح المواد", "🟣", "SUMMARY") # بنفسجي: الملخص
-    display_tile(col3, "اختبارات وكويزات", "🔴", "QUIZ") # أحمر: الاختبار
-    display_tile(col4, "سجل الدرجات والتطور", "🟠", "GRADES") # برتقالي: الدرجات
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    col5, col6, col7, col8 = st.columns(4)
-    display_tile(col5, "ألعاب تعلم اللغة", "🟢", "GAMES") # أخضر: الألعاب
-
-# --- 5. التحكم في التطبيق ---
-
-def app_controller():
-    if "user_email" not in st.session_state: st.session_state.user_email = None
-
-    if not st.session_state.user_email:
-        # (كود تسجيل الدخول)
-        st.markdown("<h1 style='text-align: center;'>🔐 تسجيل الدخول</h1>", unsafe_allow_html=True)
+def login_page():
+    st.markdown("<h1 style='text-align:center; color:#764abc;'>🔐 تسجيل دخول سريع</h1>", unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        with st.form("login_form"):
+            # تم تغيير الإيميل إلى اسم المستخدم
+            username_input = st.text_input("اسم المستخدم (Username):")
+            if st.form_submit_button("دخول"):
+                username = username_input.lower().strip()
+                if not username:
+                    st.error("الرجاء إدخال اسم.")
+                    st.stop()
+                
+                # التحقق والتسجيل
+                get_user(username) 
+                st.session_state.username = username
+                st.session_state.action = "DASHBOARD"
+                st.rerun()
         return
 
-    # القائمة الجانبية (ثابتة)
-    with st.sidebar:
-        # (كود القائمة الجانبية)
-        st.subheader("💡 دعم وتواصل")
-        st.info("📩 **بريد الدعم:** support@eduminds.com")
-        st.info("❓ **حل المشكلات:** اضغط هنا")
+# --- 5. التطبيق الرئيسي ---
+def dashboard_page():
+    # ... (كود لوحة التحكم) ...
+    pass # سيتم استبدال هذا بكود لوحة التحكم
 
-    # التحكم في الصفحة المعروضة
-    action = st.session_state.get("action", "DASHBOARD")
-    
-    if action == "DASHBOARD":
-        dashboard_page()
-    elif action == "QUIZ":
-        quiz_mode()
-    elif action == "SUMMARY":
-        summary_mode()
-    elif action == "GRADES":
-        grades_mode(st.session_state.user_email)
-    elif action == "TASKS":
-        task_management_mode()
-    elif action == "GAMES":
-        games_mode()
-    # (إضافة باقي الحالات مثل ADMIN)
+def quiz_mode():
+    # ... (كود الاختبار) ...
+    pass
+
+def summary_mode():
+    # ... (كود الملخص) ...
+    pass
+
+def chat_mode():
+    # ... (كود الأسئلة) ...
+    pass
+
+def grades_mode(username):
+    # ... (كود الدرجات) ...
+    pass
+
+def admin_mode():
+    # ... (كود الأدمن) ...
+    pass
+
+def app_controller():
+    if not st.session_state.username:
+        login_page()
+        return
+
+    # التحكم في القائمة الجانبية والصفحات
+    username = st.session_state.username
+    user = get_user(username)
+    is_admin = username in ADMIN_USERS # التحقق من الأدمن الآن بالاسم
+
+    with st.sidebar:
+        # (باقي كود القائمة الجانبية)
+        st.write(f"أهلاً، **{user['name']}**")
+        if st.button("تسجيل خروج"):
+            st.session_state.username = None
+            st.rerun()
+
+    # (باقي كود التحكم في الصفحة المعروضة)
+    st.info("تم تفعيل نظام الدخول بالاسم بنجاح!")
+
 
 if __name__ == "__main__":
-    # هذا الجزء يحتاج لتعديل بسيط لإضافة صفحة تسجيل الدخول التي كانت تعمل سابقاً
-    # تم حذفه مؤقتاً لتسهيل التركيز على الواجهات الجديدة
     app_controller()
 
 
